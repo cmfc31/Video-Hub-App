@@ -24,17 +24,69 @@
 const fs = require('fs');
 import * as path from 'path';
 const spawn = require('child_process').spawn;
+const exec = require('child_process').exec;
 
 const ffmpegPath = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
+const ffprobePath = require('@ffprobe-installer/ffprobe').path.replace('app.asar', 'app.asar.unpacked');
 
 import { GLOBALS } from './main-globals';
 
 import type { ImageElement, ScreenshotSettings } from '../interfaces/final-object.interface';
 
+// High JPEG quality for thumbnails and filmstrips (1 = best, 31 = worst).
+const FFMPEG_JPEG_QUALITY = '1';
+
+// Browser-safe preview clip encoding (H.264 Main + AAC), higher quality than default web presets.
+const PREVIEW_CLIP_CRF = '20';
+const PREVIEW_CLIP_PRESET = 'slow';
+const PREVIEW_CLIP_AUDIO_BITRATE = '160k';
+
 
 // ========================================================================================
 //          FFMPEG arg generating functions
 // ========================================================================================
+
+/**
+ * Shared libx264 settings for preview clips — broad HTML5 / Firefox compatibility.
+ */
+function browserSafeVideoEncodeArgs(): string[] {
+  return [
+    '-c:v', 'libx264',
+    '-profile:v', 'main',
+    '-level', '4.0',
+    '-pix_fmt', 'yuv420p',
+    '-preset', PREVIEW_CLIP_PRESET,
+    '-crf', PREVIEW_CLIP_CRF,
+    '-movflags', '+faststart',
+    '-f', 'mp4',
+  ];
+}
+
+/**
+ * Shared AAC settings for preview clips.
+ */
+function browserSafeAudioEncodeArgs(): string[] {
+  return [
+    '-c:a', 'aac',
+    '-b:a', PREVIEW_CLIP_AUDIO_BITRATE,
+    '-ac', '2',
+    '-ar', '48000',
+  ];
+}
+
+/**
+ * Detect whether a video file has at least one audio stream.
+ * Used to pick a concat graph that works for silent sources.
+ */
+function hasAudioStream(pathToVideo: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const ffprobeCommand = '"' + ffprobePath + '" -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 "' + path.normalize(pathToVideo) + '"';
+
+    exec(ffprobeCommand, (err, stdout) => {
+      resolve(!err && stdout.trim().length > 0);
+    });
+  });
+}
 
 /**
  * Generate the ffmpeg args to extract a single frame according to settings
@@ -55,8 +107,8 @@ const extractSingleFrameArgs = (
   const args: string[] = [
     '-ss', (duration / 10).toString(),
     '-i', pathToVideo,
-    '-frames', '1',
-    '-q:v', '2',
+    '-frames:v', '1',
+    '-q:v', FFMPEG_JPEG_QUALITY,
     '-vf', scaleAndPadString(ssWidth, screenshotHeight),
     savePath,
   ];
@@ -105,8 +157,9 @@ const generateScreenshotStripArgs = (
     current++;
   }
   args.push(
-    '-frames', '1',
     '-filter_complex', allFramesFiltered + outputFrames + 'hstack=inputs=' + totalCount,
+    '-frames:v', '1',
+    '-q:v', FFMPEG_JPEG_QUALITY,
     savePath
   );
 
@@ -131,32 +184,50 @@ const generatePreviewClipArgs = (
   clipSnippets: number,
   snippetLength: number,
   savePath: string,
+  hasAudio: boolean,
 ): string[] => {
 
   let current = 1;
   const totalCount = clipSnippets;
   const step: number = duration / (totalCount + 1);
   const args: string[] = [];
-  let concat = '';
+  let concatInputs = '';
+  const videoScale = '[v]scale=-2:' + clipHeight + ',format=yuv420p[v2]';
 
   // make the magic filter
   while (current <= totalCount) {
     const time = current * step;
     const preview_duration = snippetLength;
     args.push('-ss', time.toString(), '-t', preview_duration.toString(), '-i', pathToVideo);
-    concat += '[' + (current - 1) + ':V]' + '[' + (current - 1) + ':a]';
     current++;
   }
 
-  concat += 'concat=n=' + totalCount + ':v=1:a=1[v][a];[v]scale=-2:' + clipHeight + '[v2]';
-  args.push('-filter_complex',
-            concat,
-            '-map',
-            '[v2]',
-            '-map',
-            '[a]',
-            savePath);
-  // phfff glad that's over
+  if (hasAudio) {
+    for (let i = 0; i < totalCount; i++) {
+      concatInputs += '[' + i + ':v][' + i + ':a]';
+    }
+    concatInputs += 'concat=n=' + totalCount + ':v=1:a=1[v][a];' + videoScale;
+    args.push(
+      '-filter_complex', concatInputs,
+      '-map', '[v2]',
+      '-map', '[a]',
+      ...browserSafeVideoEncodeArgs(),
+      ...browserSafeAudioEncodeArgs(),
+      savePath
+    );
+  } else {
+    for (let i = 0; i < totalCount; i++) {
+      concatInputs += '[' + i + ':v]';
+    }
+    concatInputs += 'concat=n=' + totalCount + ':v=1:a=0[v];' + videoScale;
+    args.push(
+      '-filter_complex', concatInputs,
+      '-map', '[v2]',
+      '-an',
+      ...browserSafeVideoEncodeArgs(),
+      savePath
+    );
+  }
 
   return args;
 };
@@ -175,8 +246,8 @@ const extractFirstFrameArgs = (
   const args: string[] = [
     '-ss', '0',
     '-i', pathToClip,
-    '-frames', '1',
-    '-f', 'image2',
+    '-frames:v', '1',
+    '-q:v', FFMPEG_JPEG_QUALITY,
     pathToThumb,
   ];
 
@@ -326,12 +397,14 @@ export function extractAll(
       if (clipExists) {
         return true;
       } else {
+        return hasAudioStream(pathToVideo)
+          .then((sourceHasAudio: boolean) => {
+            const ffmpegArgs: string[] = generatePreviewClipArgs(
+              pathToVideo, duration, clipHeight, clipSnippets, snippetLength, clipSavePath, sourceHasAudio
+            );
 
-        const ffmpegArgs: string[] = generatePreviewClipArgs(
-          pathToVideo, duration, clipHeight, clipSnippets, snippetLength, clipSavePath
-        );
-
-        return spawn_ffmpeg_and_run(ffmpegArgs, maxRunTime.clip, 'clip');                 // (7)
+            return spawn_ffmpeg_and_run(ffmpegArgs, maxRunTime.clip, 'clip');             // (7)
+          });
       }
 
     })
@@ -403,15 +476,15 @@ function setExtractionDurations(
   clipHeight: number
 ): ExtractionDurations {
 
-  // screenshot heights range from 144px to 504px
+  // screenshot heights range from 144px to 720px
   // we'll call 144 the baseline and increase duration based on this
   // number of pixels grows ~ as square of height, so we square below
   // this means at highest resolution we multyply by 12.5 the time we wait
-  const thumbHeightRatio = screenshotHeight / 144; // max 3.5 or 12.25 when squared
+  const thumbHeightRatio = screenshotHeight / 144; // max 5.0 at 720px or 25 when squared
   const thumbHeightFactor = 1 + (thumbHeightRatio * thumbHeightRatio / 4); // square of ratio
   // not using Math.pow(n,2) because this is apparently faster https://stackoverflow.com/a/26594370/5017391
 
-  const clipHeightRatio = clipHeight / 144; // max 3.5 or 12.25 when squared
+  const clipHeightRatio = clipHeight / 144; // max 5.0 at 720px or 25 when squared
   const clipHeightFactor = 1 + (clipHeightRatio * clipHeightRatio / 4); // square of ratio
 
   const sourceRatio = (sourceHeight === 0) ? 1 : (sourceHeight / 720); // 3 when source is 4k
@@ -420,7 +493,8 @@ function setExtractionDurations(
   return {                                                                           // for me:
     thumb:     500 * sourceFactor * thumbHeightFactor,                               // never above 800ms
     filmstrip: 350 * sourceFactor * thumbHeightFactor * numOfScreens,                // rarely above 15s, but 4K 30screens took 50s
-    clip:      350 * sourceFactor * clipHeightFactor * clipSnippets * snippetLength, // rarely above 15s
+    // libx264 re-encode (slow preset) needs extra headroom vs implicit defaults
+    clip:      1200 * sourceFactor * clipHeightFactor * clipSnippets * snippetLength,
     clipThumb: 400 * clipHeightRatio,                                                // never above 600ms
   };
 }
@@ -456,8 +530,9 @@ export function replaceThumbnailWithNewImage(
   const width: number = Math.floor(height * (16 / 9));
 
   const args = [
-    '-y', '-i', newFile,
+    '-i', newFile,
     '-vf', scaleAndPadString(width, height),
+    '-q:v', FFMPEG_JPEG_QUALITY,
     oldFile,
   ];
 
@@ -497,7 +572,7 @@ function spawn_ffmpeg_and_run(
     // Uncomment things in this method (and the `performance` import) to check how long extraction takes
     // const t0: number = performance.now();
 
-    const ffmpeg_process = spawn(ffmpegPath, args);
+    const ffmpeg_process = spawn(ffmpegPath, ['-nostdin', '-y', ...args]);
 
     const killProcessTimeout = setTimeout(() => {
       if (!ffmpeg_process.killed) {

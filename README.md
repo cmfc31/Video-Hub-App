@@ -57,6 +57,34 @@ Main dependencies in use:
 
 To help debug a production build of VHA you can use [Debugtron](https://github.com/bytedance/debugtron)
 
+### Regenerating thumbnails, filmstrips, and preview clips
+
+Generated assets are stored under your hub output folder:
+
+- `vha-<hubName>/thumbnails/*.jpg`
+- `vha-<hubName>/filmstrips/*.jpg`
+- `vha-<hubName>/clips/*.mp4` and matching `*.jpg` posters
+
+VHA skips extraction when these files already exist, so **upgrading the app does not automatically re-encode old assets**.
+
+To regenerate with the latest FFmpeg settings:
+
+1. Close VHA (or stop any active import).
+2. Back up your hub if desired (copy the `vha-<hubName>` folder and the `.vha2` file).
+3. Delete the assets you want recreated:
+   - **Thumbnails only:** delete files in `thumbnails/`
+   - **Filmstrips only:** delete files in `filmstrips/`
+   - **Preview clips only:** delete `.mp4` and `.jpg` pairs in `clips/`
+   - **Everything:** delete all three subfolders' contents (keep the folders themselves).
+4. Re-open the hub in VHA.
+5. Open **Statistics** and click **Add missing thumbnails** to queue re-extraction.
+
+Notes:
+
+- Screenshot height and clip settings come from the hub's `.vha2` file (`screenshotSettings`); they are chosen at hub creation time.
+- Preview clips use browser-friendly **H.264 + AAC** encoding with **`faststart`** for streaming playback in Firefox and other browsers.
+- Silent source videos still generate preview clips (video-only output when no audio stream is detected).
+
 ## Remote
 
 👩‍🚀 a new feature in VHA is the option for the user to turn on a _server_ after the app starts. This will let the user open a simpler version of the VHA user interface on their phone or tablet (if both PC and device are on the same WiFi) and use it as remote control to play videos 🚀
