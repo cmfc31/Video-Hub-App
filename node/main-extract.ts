@@ -41,6 +41,90 @@ const PREVIEW_CLIP_CRF = '20';
 const PREVIEW_CLIP_PRESET = 'slow';
 const PREVIEW_CLIP_AUDIO_BITRATE = '160k';
 
+interface HardwareDecodeConfig {
+  inputArgs: string[];
+  name: string;
+  amdH264EncoderAvailable: boolean;
+}
+
+let hardwareDecodeConfigPromise: Promise<HardwareDecodeConfig>;
+
+const NO_HARDWARE_DECODE: HardwareDecodeConfig = {
+  inputArgs: [],
+  name: 'none',
+  amdH264EncoderAvailable: false,
+};
+
+function execCommand(command: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    exec(command, (error, stdout) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(stdout || '');
+      }
+    });
+  });
+}
+
+/**
+ * Detect the best available hardware decoder for Windows + AMD setups.
+ * We prefer d3d11va, then dxva2.
+ */
+function detectHardwareDecodeConfig(): Promise<HardwareDecodeConfig> {
+  if (process.platform !== 'win32') {
+    return Promise.resolve(NO_HARDWARE_DECODE);
+  }
+
+  const hwaccelCmd = '"' + ffmpegPath + '" -hide_banner -hwaccels';
+  const encoderCmd = '"' + ffmpegPath + '" -hide_banner -encoders';
+
+  return Promise.all([
+    execCommand(hwaccelCmd).catch(() => ''),
+    execCommand(encoderCmd).catch(() => ''),
+  ])
+    .then(([hwaccelsOutput, encodersOutput]) => {
+      const amfAvailable = /\bh264_amf\b/i.test(encodersOutput);
+
+      if (/\bd3d11va\b/i.test(hwaccelsOutput)) {
+        return { inputArgs: ['-hwaccel', 'd3d11va'], name: 'd3d11va', amdH264EncoderAvailable: amfAvailable };
+      }
+      if (/\bdxva2\b/i.test(hwaccelsOutput)) {
+        return { inputArgs: ['-hwaccel', 'dxva2'], name: 'dxva2', amdH264EncoderAvailable: amfAvailable };
+      }
+      return {
+        ...NO_HARDWARE_DECODE,
+        amdH264EncoderAvailable: amfAvailable,
+      };
+    })
+    .catch(() => NO_HARDWARE_DECODE);
+}
+
+function getHardwareDecodeConfig(): Promise<HardwareDecodeConfig> {
+  if (!hardwareDecodeConfigPromise) {
+    hardwareDecodeConfigPromise = detectHardwareDecodeConfig();
+  }
+  return hardwareDecodeConfigPromise;
+}
+
+/**
+ * Input-scoped ffmpeg args (like -hwaccel) must appear before each `-i`.
+ */
+function injectInputScopedArgs(baseArgs: string[], inputScopedArgs: string[]): string[] {
+  if (inputScopedArgs.length === 0) {
+    return [...baseArgs];
+  }
+
+  const result: string[] = [];
+  for (let i = 0; i < baseArgs.length; i++) {
+    if (baseArgs[i] === '-i') {
+      result.push(...inputScopedArgs);
+    }
+    result.push(baseArgs[i]);
+  }
+
+  return result;
+}
 
 // ========================================================================================
 //          FFMPEG arg generating functions
@@ -49,7 +133,21 @@ const PREVIEW_CLIP_AUDIO_BITRATE = '160k';
 /**
  * Shared libx264 settings for preview clips — broad HTML5 / Firefox compatibility.
  */
-function browserSafeVideoEncodeArgs(): string[] {
+function browserSafeVideoEncodeArgs(preferAmdH264Encoder: boolean): string[] {
+  if (preferAmdH264Encoder) {
+    return [
+      '-c:v', 'h264_amf',
+      '-quality', 'quality',
+      '-rc', 'vbr_peak',
+      '-b:v', '4M',
+      '-maxrate', '8M',
+      '-profile:v', 'main',
+      '-pix_fmt', 'yuv420p',
+      '-movflags', '+faststart',
+      '-f', 'mp4',
+    ];
+  }
+
   return [
     '-c:v', 'libx264',
     '-profile:v', 'main',
@@ -88,6 +186,26 @@ function hasAudioStream(pathToVideo: string): Promise<boolean> {
   });
 }
 
+interface VideoColorProfile {
+  isHdr: boolean;
+}
+
+const HDR_COLOR_TRANSFERS: Set<string> = new Set(['smpte2084', 'arib-std-b67']);
+
+/**
+ * Detect HDR sources so we can tone-map before JPEG / SDR preview output.
+ */
+function getVideoColorProfile(pathToVideo: string): Promise<VideoColorProfile> {
+  const ffprobeCommand = '"' + ffprobePath + '" -v error -select_streams v:0 -show_entries stream=color_transfer -of csv=p=0 "' + path.normalize(pathToVideo) + '"';
+
+  return new Promise((resolve) => {
+    exec(ffprobeCommand, (err, stdout) => {
+      const colorTransfer = (stdout || '').trim().toLowerCase();
+      resolve({ isHdr: !err && HDR_COLOR_TRANSFERS.has(colorTransfer) });
+    });
+  });
+}
+
 /**
  * Generate the ffmpeg args to extract a single frame according to settings
  * @param pathToVideo
@@ -100,6 +218,7 @@ const extractSingleFrameArgs = (
   screenshotHeight: number,
   duration: number,
   savePath: string,
+  isHdr: boolean,
 ): string[] => {
 
   const ssWidth: number = screenshotHeight * (16 / 9);
@@ -109,7 +228,7 @@ const extractSingleFrameArgs = (
     '-i', pathToVideo,
     '-frames:v', '1',
     '-q:v', FFMPEG_JPEG_QUALITY,
-    '-vf', scaleAndPadString(ssWidth, screenshotHeight),
+    '-vf', scaleAndPadString(ssWidth, screenshotHeight, isHdr),
     savePath,
   ];
 
@@ -134,6 +253,7 @@ const generateScreenshotStripArgs = (
   screenshotHeight: number,
   numberOfScreenshots: number,
   savePath: string,
+  isHdr: boolean,
 ): string[] => {
 
   let current = 0;
@@ -146,7 +266,7 @@ const generateScreenshotStripArgs = (
   // Hardcode a specific 16:9 ratio
   const ssWidth: number = screenshotHeight * (16 / 9);
 
-  const fancyScaleFilter: string = scaleAndPadString(ssWidth, screenshotHeight);
+  const fancyScaleFilter: string = scaleAndPadString(ssWidth, screenshotHeight, isHdr);
 
   // make the magic filter
   while (current < totalCount) {
@@ -185,6 +305,8 @@ const generatePreviewClipArgs = (
   snippetLength: number,
   savePath: string,
   hasAudio: boolean,
+  preferAmdH264Encoder: boolean,
+  isHdr: boolean,
 ): string[] => {
 
   let current = 1;
@@ -192,7 +314,7 @@ const generatePreviewClipArgs = (
   const step: number = duration / (totalCount + 1);
   const args: string[] = [];
   let concatInputs = '';
-  const videoScale = '[v]scale=-2:' + clipHeight + ',format=yuv420p[v2]';
+  const videoScale = '[v]' + previewClipVideoScaleFilter(clipHeight, isHdr) + '[v2]';
 
   // make the magic filter
   while (current <= totalCount) {
@@ -211,7 +333,7 @@ const generatePreviewClipArgs = (
       '-filter_complex', concatInputs,
       '-map', '[v2]',
       '-map', '[a]',
-      ...browserSafeVideoEncodeArgs(),
+      ...browserSafeVideoEncodeArgs(preferAmdH264Encoder),
       ...browserSafeAudioEncodeArgs(),
       savePath
     );
@@ -224,7 +346,7 @@ const generatePreviewClipArgs = (
       '-filter_complex', concatInputs,
       '-map', '[v2]',
       '-an',
-      ...browserSafeVideoEncodeArgs(),
+      ...browserSafeVideoEncodeArgs(preferAmdH264Encoder),
       savePath
     );
   }
@@ -334,6 +456,10 @@ export function extractAll(
     sourceHeight, numOfScreens, screenshotHeight, clipSnippets, snippetLength, clipHeight
   );
 
+  let sourceIsHdr = false;
+
+  const hdrTimeoutFactor = (durationMs: number): number => sourceIsHdr ? durationMs * 2 : durationMs;
+
   checkFileExists(pathToVideo)                                                            // (1)
     .then((videoFileExists: boolean) => {
       // console.log('01 - video file live = ' + videoFileExists);
@@ -341,8 +467,12 @@ export function extractAll(
       if (!videoFileExists) {
         throw new Error('VIDEO FILE NOT PRESENT');
       } else {
-        return checkFileExists(thumbnailSavePath);                                        // (2)
+        return getVideoColorProfile(pathToVideo);
       }
+    })
+    .then((colorProfile: VideoColorProfile) => {
+      sourceIsHdr = colorProfile.isHdr;
+      return checkFileExists(thumbnailSavePath);                                          // (2)
     })
     .then((thumbExists: boolean) => {
       // console.log('02 - thumbnail already present = ' + thumbExists);
@@ -351,10 +481,10 @@ export function extractAll(
         return true;
       } else {
         const ffmpegArgs: string[] =  extractSingleFrameArgs(
-          pathToVideo, screenshotHeight, duration, thumbnailSavePath
+          pathToVideo, screenshotHeight, duration, thumbnailSavePath, sourceIsHdr
         );
 
-        return spawn_ffmpeg_and_run(ffmpegArgs, maxRunTime.thumb, 'thumb');               // (3)
+        return run_ffmpeg_with_decode_acceleration(ffmpegArgs, hdrTimeoutFactor(maxRunTime.thumb), 'thumb'); // (3)
       }
     })
     .then((thumbSuccess: boolean) => {
@@ -374,10 +504,10 @@ export function extractAll(
       } else {
 
         const ffmpegArgs: string [] = generateScreenshotStripArgs(
-          pathToVideo, duration, screenshotHeight, numOfScreens, filmstripSavePath
+          pathToVideo, duration, screenshotHeight, numOfScreens, filmstripSavePath, sourceIsHdr
         );
 
-        return spawn_ffmpeg_and_run(ffmpegArgs, maxRunTime.filmstrip, 'filmstrip');       // (5)
+        return run_ffmpeg_with_decode_acceleration(ffmpegArgs, hdrTimeoutFactor(maxRunTime.filmstrip), 'filmstrip'); // (5)
       }
     })
     .then((filmstripSuccess: boolean) => {
@@ -400,10 +530,30 @@ export function extractAll(
         return hasAudioStream(pathToVideo)
           .then((sourceHasAudio: boolean) => {
             const ffmpegArgs: string[] = generatePreviewClipArgs(
-              pathToVideo, duration, clipHeight, clipSnippets, snippetLength, clipSavePath, sourceHasAudio
+              pathToVideo, duration, clipHeight, clipSnippets, snippetLength, clipSavePath, sourceHasAudio, false, sourceIsHdr
             );
 
-            return spawn_ffmpeg_and_run(ffmpegArgs, maxRunTime.clip, 'clip');             // (7)
+            return getHardwareDecodeConfig()
+              .then((decodeConfig: HardwareDecodeConfig) => {
+                const acceleratedClipArgs = generatePreviewClipArgs(
+                  pathToVideo,
+                  duration,
+                  clipHeight,
+                  clipSnippets,
+                  snippetLength,
+                  clipSavePath,
+                  sourceHasAudio,
+                  decodeConfig.amdH264EncoderAvailable,
+                  sourceIsHdr
+                );
+
+                return run_ffmpeg_with_decode_acceleration(
+                  acceleratedClipArgs,
+                  hdrTimeoutFactor(maxRunTime.clip),
+                  'clip',
+                  ffmpegArgs
+                );
+              });
           });
       }
 
@@ -425,7 +575,7 @@ export function extractAll(
       } else {
         const ffmpegArgs: string[] = extractFirstFrameArgs(clipSavePath, clipThumbSavePath);
 
-        return spawn_ffmpeg_and_run(ffmpegArgs, maxRunTime.clipThumb, 'clip thumb');      // (9)
+        return run_ffmpeg_with_decode_acceleration(ffmpegArgs, maxRunTime.clipThumb, 'clip thumb'); // (9)
       }
     })
     .then((success: boolean) => {
@@ -531,27 +681,56 @@ export function replaceThumbnailWithNewImage(
 
   const args = [
     '-i', newFile,
-    '-vf', scaleAndPadString(width, height),
+    '-vf', scaleAndPadString(width, height, false),
     '-q:v', FFMPEG_JPEG_QUALITY,
     oldFile,
   ];
 
-  return spawn_ffmpeg_and_run(args, 1000, 'replacing thumbnail');
+  return run_ffmpeg_with_decode_acceleration(args, 1000, 'replacing thumbnail');
   // resizing an image file with ffmpeg should take less than 1 second
 }
 
 /**
- * Generate the correct `scale=` & `pad=` string for ffmpeg
- * @param width
- * @param height
+ * Tone-map HDR (PQ / HLG) to SDR before scaling to JPEG-friendly output.
  */
-function scaleAndPadString(width: number, height: number): string {
+function hdrToSdrFilterPrefix(): string {
+  return 'zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=pc,format=yuv420p,';
+}
+
+/**
+ * Scale filter color options — SDR sources use auto range detection; post-HDR is already PC range.
+ */
+function scaleColorOptions(isHdr: boolean): string {
+  if (isHdr) {
+    return ':in_range=pc:out_range=pc:out_color_matrix=bt709';
+  }
+  return ':in_range=auto:out_range=pc:out_color_matrix=bt709';
+}
+
+/**
+ * Scale + pad filter for thumbnails and filmstrips with correct color range handling.
+ */
+function scaleAndPadString(width: number, height: number, isHdr: boolean): string {
   // sweet thanks to StackExchange!
   // https://superuser.com/questions/547296/resizing-videos-with-ffmpeg-avconv-to-fit-into-static-sized-player
 
-  return 'scale=w=' + width + ':h=' + height + ':force_original_aspect_ratio=decrease,' +
+  const prefix = isHdr ? hdrToSdrFilterPrefix() : '';
+  const scaleOpts = scaleColorOptions(isHdr);
+
+  return prefix +
+         'scale=w=' + width + ':h=' + height + ':force_original_aspect_ratio=decrease' + scaleOpts + ',' +
          'pad='     + width + ':'   + height + ':(ow-iw)/2:(oh-ih)/2';
 
+}
+
+/**
+ * Post-concat scale filter for preview clips.
+ */
+function previewClipVideoScaleFilter(clipHeight: number, isHdr: boolean): string {
+  const prefix = isHdr ? hdrToSdrFilterPrefix() : '';
+  const scaleOpts = scaleColorOptions(isHdr);
+
+  return prefix + 'scale=-2:' + clipHeight + scaleOpts + ',format=yuv420p';
 }
 
 /**
@@ -573,9 +752,11 @@ function spawn_ffmpeg_and_run(
     // const t0: number = performance.now();
 
     const ffmpeg_process = spawn(ffmpegPath, ['-nostdin', '-y', ...args]);
+    let timedOut = false;
 
     const killProcessTimeout = setTimeout(() => {
       if (!ffmpeg_process.killed) {
+        timedOut = true;
         ffmpeg_process.kill();
         // console.log(description + ' KILLED EARLY');
         return resolve(false);
@@ -594,13 +775,57 @@ function spawn_ffmpeg_and_run(
         console.log('grep stderr: ' + data);
       }
     });
-    ffmpeg_process.on('exit', () => {
+    ffmpeg_process.on('exit', (code) => {
       clearTimeout(killProcessTimeout);
       // const t1: number = performance.now();
       // console.log(description + ' ' + Math.round(t1 - t0) + ' < ' + maxRunningTime);
-      return resolve(true);
+      if (timedOut) {
+        return;
+      }
+      return resolve(code === 0);
     });
 
   });
 
+}
+
+/**
+ * Try GPU-accelerated decode first, then retry with CPU decode if needed.
+ */
+function run_ffmpeg_with_decode_acceleration(
+  baseArgs: string[],
+  maxRunningTime: number,
+  description: string,
+  cpuFallbackBaseArgs?: string[],
+): Promise<boolean> {
+  const fallbackArgs = cpuFallbackBaseArgs || baseArgs;
+
+  return getHardwareDecodeConfig()
+    .then((decodeConfig: HardwareDecodeConfig) => {
+      if (decodeConfig.inputArgs.length === 0) {
+        return spawn_ffmpeg_and_run(baseArgs, maxRunningTime, description)
+          .then((success: boolean) => {
+            if (success || serializeFfmpegArgs(baseArgs) === serializeFfmpegArgs(fallbackArgs)) {
+              return success;
+            }
+            return spawn_ffmpeg_and_run(fallbackArgs, maxRunningTime, description + ' (cpu fallback)');
+          });
+      }
+
+      const acceleratedArgs = injectInputScopedArgs(baseArgs, decodeConfig.inputArgs);
+
+      return spawn_ffmpeg_and_run(acceleratedArgs, maxRunningTime, description + ' (' + decodeConfig.name + ')')
+        .then((acceleratedSuccess: boolean) => {
+          if (acceleratedSuccess) {
+            return true;
+          }
+
+          // If hardware decode fails for a specific file/codec, fall back automatically.
+          return spawn_ffmpeg_and_run(fallbackArgs, maxRunningTime, description + ' (cpu fallback)');
+        });
+    });
+}
+
+function serializeFfmpegArgs(args: string[]): string {
+  return args.join('\0');
 }
