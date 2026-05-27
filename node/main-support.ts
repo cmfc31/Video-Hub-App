@@ -19,6 +19,7 @@ import type { Stats } from 'fs';
 
 import type { FinalObject, ImageElement, ScreenshotSettings, InputSources, ResolutionString } from '../interfaces/final-object.interface';
 import { NewImageElement } from '../interfaces/final-object.interface';
+import { formatFileSize } from '../interfaces/file-size.util';
 import { startFileSystemWatching, resetWatchers } from './main-extract-async';
 
 interface ResolutionMeta {
@@ -118,18 +119,11 @@ export function alphabetizeFinalArray(imagesArray: ImageElement[]): ImageElement
 
 /**
  * Generate the file size formatted as ### MB or #.# GB
- * THIS CODE DUPLICATES THE CODE IN `file-size.pipe.ts`
+ * Uses shared logic from `interfaces/file-size.util.ts` (also used by `file-size.pipe.ts`)
  * @param fileSize
  */
 function getFileSizeDisplay(sizeInBytes: number): string {
-  if (sizeInBytes) {
-    const rounded = Math.round(sizeInBytes / 1000000);
-    return (rounded > 999
-              ? (rounded / 1000).toFixed(1) + ' GB'
-              : rounded + ' MB');
-  } else {
-    return '';
-  }
+  return formatFileSize(sizeInBytes, false, true);
 }
 
 /**

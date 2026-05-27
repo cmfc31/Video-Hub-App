@@ -1,6 +1,9 @@
 import type { PipeTransform } from '@angular/core';
 import { Pipe } from '@angular/core';
 
+import { formatFileSize } from '../../../interfaces/file-size.util';
+import { SettingsButtons } from '../common/settings-buttons';
+
 @Pipe({
   standalone: false,
   name: 'fileSizePipe'
@@ -13,21 +16,7 @@ export class FileSizePipe implements PipeTransform {
    * @param excludeParen - whether (2.3GB) or 2.3GB
    */
   transform(sizeInBytes: number, excludeParen?: boolean): string {
-    if (sizeInBytes) {
-      const rounded = Math.round(sizeInBytes / 1000000);
-
-      return (excludeParen ? '' : '(')
-           + (
-              rounded > 999000
-                ? (rounded / 1000000).toFixed(1) + ' TB'
-                : rounded > 999
-                  ? (rounded / 1000).toFixed(1)  + ' GB'
-                  : rounded                      + ' MB'
-              )
-           + (excludeParen ? '' : ')');
-    } else {
-      return '';
-    }
+    return formatFileSize(sizeInBytes, SettingsButtons['binaryFileSize'].toggled, excludeParen);
   }
 
 }

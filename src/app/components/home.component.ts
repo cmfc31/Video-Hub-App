@@ -28,6 +28,7 @@ import { SortOrderComponent } from './sort-order/sort-order.component';
 
 // Interfaces
 import type { FinalObject, ImageElement, ScreenshotSettings, ResolutionString } from '../../../interfaces/final-object.interface';
+import { formatFileSize, refreshFileSizeDisplays } from '../../../interfaces/file-size.util';
 import type { ImportStage } from '../../../node/main-support';
 import type { ServerDetails } from './statistics/statistics.component';
 import type { RemoteSettings, SettingsButtonSavedProperties, SettingsObject } from '../../../interfaces/settings-object.interface';
@@ -745,6 +746,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
       this.manualTagsService.loadTagColors(finalObject.tagColors);
 
       this.imageElementService.imageElements = this.demo ? finalObject.images.slice(0, 50) : finalObject.images;
+      this.refreshAllFileSizeDisplays();
 
       this.canCloseWizard = true;
       this.wizard.showWizard = false;
@@ -855,6 +857,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
         });
 
       if (!this.demo || this.imageElementService.imageElements.length <= 50) {
+        this.applyFileSizeDisplay(element);
         element.index = this.imageElementService.imageElements.length;
         this.imageElementService.imageElements.push(element); // not enough for view to update; we need `.slice()`
         this.imageElementService.finalArrayNeedsSaving = true;
@@ -1658,6 +1661,10 @@ export class HomeComponent implements OnInit, AfterViewInit {
       this.clearRecentlyViewedHistory();
     } else if (uniqueKey === 'resetSettings') {
       this.resetSettingsToDefault();
+    } else if (uniqueKey === 'binaryFileSize') {
+      this.toggleButtonOpposite(uniqueKey);
+      this.refreshAllFileSizeDisplays();
+      this.cd.detectChanges();
     } else if (uniqueKey === 'showTags') {
       if (this.settingsModalOpen) {
         this.settingsModalOpen = false;
@@ -1981,6 +1988,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
   resetSettingsToDefault(): void {
     this.settingsButtons = JSON.parse(JSON.stringify(this.defaultSettingsButtons)); // JSON hack to allow resetting more than once
     this.toggleButton('showThumbnails');
+    this.refreshAllFileSizeDisplays();
   }
 
   /**
@@ -2273,6 +2281,23 @@ export class HomeComponent implements OnInit, AfterViewInit {
     const cutoff = this.getOutlierCutoff(durations);
 
     this.durationOutlierCutoff = Math.floor(cutoff);
+  }
+
+  applyFileSizeDisplay(element: ImageElement): void {
+    if (element.cleanName !== '*FOLDER*') {
+      element.fileSizeDisplay = formatFileSize(
+        element.fileSize,
+        this.settingsButtons['binaryFileSize'].toggled,
+        true
+      );
+    }
+  }
+
+  refreshAllFileSizeDisplays(): void {
+    refreshFileSizeDisplays(
+      this.imageElementService.imageElements,
+      this.settingsButtons['binaryFileSize'].toggled
+    );
   }
 
   setUpSizeFilterValues(finalArray: ImageElement[]): void {

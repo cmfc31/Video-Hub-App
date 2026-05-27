@@ -3,6 +3,7 @@ import type { SettingsButton } from './settings-buttons.interface';
 export type SettingsButtonKey = 'autoFileTags'
  | 'autoFolderTags'
  | 'autoplayClips'
+ | 'binaryFileSize'
  | 'clearHistory'
  | 'clipsThumbnail'
  | 'compactView'
@@ -199,6 +200,7 @@ export const SettingsButtonsGroups: SettingsButtonKey[][] = [
   ],
   [ // 14 - Create a new hub ---------------------------- 3rd tab
     'startWizard',
+    'binaryFileSize',
     'resetSettings', // Various settings
     'clearHistory',
     'showDeleteOption',
@@ -276,6 +278,14 @@ export const SettingsButtons: SettingsButtonsType = {
     hidden: true,
     iconName: 'icon-auto-play-clips',
     title: 'BUTTONS.autoplayClipsHint',
+    toggled: false
+  },
+  'binaryFileSize': {
+    description: 'BUTTONS.binaryFileSizeDescription',
+    hidden: true,
+    moreInfo: 'BUTTONS.binaryFileSizeMoreInfo',
+    settingsHeading: 'SETTINGS.variousSettings',
+    title: 'BUTTONS.binaryFileSizeHint',
     toggled: false
   },
   'clearHistory': {
