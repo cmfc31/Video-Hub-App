@@ -279,7 +279,15 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
    * extract any missing thumbnails
    */
   ipc.on('add-missing-thumbnails', (event, finalArray: ImageElement[], extractClips: boolean) => {
-    extractAnyMissingThumbs(finalArray);
+    const screenshotOutputFolder: string = path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName);
+    const missingOnly = getElementsWithMissingAssets(finalArray, screenshotOutputFolder, extractClips);
+    extractAnyMissingThumbs(missingOnly);
+  });
+
+  ipc.on('request-missing-assets-stats', (event, finalArray: ImageElement[], extractClips: boolean) => {
+    const screenshotOutputFolder: string = path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName);
+    const stats = getMissingAssetsStats(finalArray, screenshotOutputFolder, extractClips);
+    event.sender.send('missing-assets-stats', stats);
   });
 
   /**
@@ -389,4 +397,117 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
     });
   });
 
+}
+
+function getMissingAssetsStats(
+  finalArray: ImageElement[],
+  screenshotOutputFolder: string,
+  shouldExtractClips: boolean
+) {
+  const stats = {
+    videosChecked: 0,
+    videosWithMissingAssets: 0,
+    missingThumbnails: 0,
+    missingFilmstrips: 0,
+    missingClips: 0,
+    missingClipThumbnails: 0,
+    totalMissingAssets: 0
+  };
+
+  finalArray
+    .filter((element: ImageElement) => {
+      return !element.deleted && element.cleanName !== '*FOLDER*';
+    })
+    .forEach((element: ImageElement) => {
+      stats.videosChecked++;
+
+      let missingForThisVideo = false;
+      const fileHash = element.hash;
+
+      missingForThisVideo = updateMissingAssetCountsForElement(
+        stats,
+        fileHash,
+        screenshotOutputFolder,
+        shouldExtractClips
+      );
+
+      if (missingForThisVideo) {
+        stats.videosWithMissingAssets++;
+      }
+    });
+
+  stats.totalMissingAssets =
+      stats.missingThumbnails
+    + stats.missingFilmstrips
+    + stats.missingClips
+    + stats.missingClipThumbnails;
+
+  return stats;
+}
+
+function updateMissingAssetCountsForElement(
+  stats: {
+    missingThumbnails: number;
+    missingFilmstrips: number;
+    missingClips: number;
+    missingClipThumbnails: number;
+  },
+  fileHash: string,
+  screenshotOutputFolder: string,
+  shouldExtractClips: boolean
+): boolean {
+  let missingForThisVideo = false;
+
+  const thumbnailPath = path.join(screenshotOutputFolder, 'thumbnails', fileHash + '.jpg');
+  if (!fs.existsSync(thumbnailPath)) {
+    stats.missingThumbnails++;
+    missingForThisVideo = true;
+  }
+
+  const filmstripPath = path.join(screenshotOutputFolder, 'filmstrips', fileHash + '.jpg');
+  if (!fs.existsSync(filmstripPath)) {
+    stats.missingFilmstrips++;
+    missingForThisVideo = true;
+  }
+
+  if (shouldExtractClips) {
+    const clipPath = path.join(screenshotOutputFolder, 'clips', fileHash + '.mp4');
+    if (!fs.existsSync(clipPath)) {
+      stats.missingClips++;
+      missingForThisVideo = true;
+    }
+
+    const clipThumbnailPath = path.join(screenshotOutputFolder, 'clips', fileHash + '.jpg');
+    if (!fs.existsSync(clipThumbnailPath)) {
+      stats.missingClipThumbnails++;
+      missingForThisVideo = true;
+    }
+  }
+
+  return missingForThisVideo;
+}
+
+function getElementsWithMissingAssets(
+  finalArray: ImageElement[],
+  screenshotOutputFolder: string,
+  shouldExtractClips: boolean
+): ImageElement[] {
+  return (finalArray || []).filter((element: ImageElement) => {
+    if (element.deleted || element.cleanName === '*FOLDER*') {
+      return false;
+    }
+
+    const tempCounts = {
+      missingThumbnails: 0,
+      missingFilmstrips: 0,
+      missingClips: 0,
+      missingClipThumbnails: 0
+    };
+    return updateMissingAssetCountsForElement(
+      tempCounts,
+      element.hash,
+      screenshotOutputFolder,
+      shouldExtractClips
+    );
+  });
 }

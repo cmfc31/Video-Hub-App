@@ -63,6 +63,23 @@ let preventSleepIds: number[] = []; // prevent and allow sleep
 
 resetAllQueues();
 
+function initializeThumbQueue(): void {
+  thumbsDone = 0;
+  thumbExtractionStartTime = 0;
+
+  thumbQueue = async.queue(thumbQueueRunner, 1); // 1 is the number of threads
+
+  thumbQueue.drain(() => {
+
+    logPerformance('THUMB QUEUE took ', thumbExtractionStartTime);
+
+    thumbsDone = 0;
+    sendCurrentProgress(1, 1, 'done');
+    console.log('thumbnail extraction complete!');
+    allowSleep();
+  });
+}
+
 /**
  * Reset all three queues:
  *  - Meta queue
@@ -99,20 +116,7 @@ export function resetAllQueues(): void {
   });
 
   // Thumbs queue ======================================================================================================
-  thumbsDone = 0;
-  thumbExtractionStartTime = 0;
-
-  thumbQueue = async.queue(thumbQueueRunner, 1); // 1 is the number of threads
-
-  thumbQueue.drain(() => {
-
-    logPerformance('THUMB QUEUE took ', thumbExtractionStartTime);
-
-    thumbsDone = 0;
-    sendCurrentProgress(1, 1, 'done');
-    console.log('thumbnail extraction complete!');
-    allowSleep();
-  });
+  initializeThumbQueue();
 
   // Delete queue ======================================================================================================
   deleteThumbQueue = async.queue(deleteThumbQueueRunner, 1);
@@ -484,10 +488,34 @@ function hasAllThumbs(
  * @param fullArray          - ImageElement array
  */
 export function extractAnyMissingThumbs(fullArray: ImageElement[]): void {
+  if (!fullArray || fullArray.length === 0) {
+    return;
+  }
+
   preventSleep();
+  if (thumbQueue && typeof thumbQueue.resume === 'function') {
+    thumbQueue.resume();
+  }
   fullArray.forEach((element: ImageElement) => {
     thumbQueue.push(element);
   });
+
+  // Occasionally the queue can be idle with items pending; rebuild and re-enqueue.
+  setTimeout(() => {
+    if (thumbQueue && typeof thumbQueue.length === 'function' && typeof thumbQueue.running === 'function') {
+      const pending = thumbQueue.length();
+      const running = thumbQueue.running();
+      if (pending > 0 && running === 0) {
+        if (typeof thumbQueue.kill === 'function') {
+          thumbQueue.kill();
+        }
+        initializeThumbQueue();
+        fullArray.forEach((element: ImageElement) => {
+          thumbQueue.push(element);
+        });
+      }
+    }
+  }, 0);
 }
 
 /**

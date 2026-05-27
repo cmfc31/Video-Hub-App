@@ -19,6 +19,16 @@ export interface ServerDetails {
   host: string;
 }
 
+export interface MissingAssetsStats {
+  videosChecked: number;
+  videosWithMissingAssets: number;
+  missingThumbnails: number;
+  missingFilmstrips: number;
+  missingClips: number;
+  missingClipThumbnails: number;
+  totalMissingAssets: number;
+}
+
 @Component({
   standalone: false,
   selector: 'app-statistics',
@@ -75,6 +85,16 @@ export class StatisticsComponent implements OnInit, OnDestroy {
   selectedPort = 3000;
   serverInfo: ServerDetails;
   serverRunning = false;
+  missingAssetsLoading = false;
+  missingAssetsStats: MissingAssetsStats = {
+    videosChecked: 0,
+    videosWithMissingAssets: 0,
+    missingThumbnails: 0,
+    missingFilmstrips: 0,
+    missingClips: 0,
+    missingClipThumbnails: 0,
+    totalMissingAssets: 0
+  };
 
   objectKeys = Object.keys; // to use in template
 
@@ -92,6 +112,9 @@ export class StatisticsComponent implements OnInit, OnDestroy {
     console.log('port from settings:', this.appState.port);
 
     this.selectedPort = this.appState.port ? this.appState.port : 3000;
+
+    this.electronService.ipcRenderer.on('missing-assets-stats', this.handleMissingAssetsStats);
+    this.refreshMissingAssetsStats();
 
     // IPC subscriptions - come in as BehaviorSubject.asObservable()
 
@@ -126,6 +149,14 @@ export class StatisticsComponent implements OnInit, OnDestroy {
     }));
   }
 
+  handleMissingAssetsStats = (event, stats: MissingAssetsStats) => {
+    if (stats) {
+      this.missingAssetsStats = stats;
+    }
+    this.missingAssetsLoading = false;
+    this.cd.detectChanges();
+  };
+
   /**
    * After booting up, compute all the totals and averages to display
    */
@@ -154,6 +185,7 @@ export class StatisticsComponent implements OnInit, OnDestroy {
    */
   handleScreenshotsDeleted(numDeleted: number) {
     console.log('deleted', numDeleted, 'screenshots');
+    this.refreshMissingAssetsStats();
     setTimeout(() => {
 
       this.numberOfScreensDeleted = numDeleted;
@@ -249,6 +281,9 @@ export class StatisticsComponent implements OnInit, OnDestroy {
     console.log(this.inputFolders[index].path);
     this.tellNodeStartWatching(index, this.inputFolders[index].path, false);
     setTimeout(() => {
+      this.refreshMissingAssetsStats();
+    }, 1000);
+    setTimeout(() => {
       this.cd.detectChanges(); // to update template whether to show "Rescan" or not
     }, 1);
   }
@@ -258,11 +293,26 @@ export class StatisticsComponent implements OnInit, OnDestroy {
    * Tell node to find and extract all missing thumbnails
    */
   addMissingThumbnails() {
-    console.log('trying to extract missing thumbnails');
     this.electronService.ipcRenderer.send(
       'add-missing-thumbnails',
       this.imageElementService.imageElements,
       this.screenshotSettings.clipSnippets > 0);
+  }
+
+  generateMissingAssets() {
+    this.addMissingThumbnails();
+    setTimeout(() => {
+      this.refreshMissingAssetsStats();
+    }, 1000);
+  }
+
+  refreshMissingAssetsStats() {
+    this.missingAssetsLoading = true;
+    this.electronService.ipcRenderer.send(
+      'request-missing-assets-stats',
+      this.imageElementService.imageElements,
+      this.screenshotSettings.clipSnippets > 0
+    );
   }
 
   /**
@@ -363,6 +413,7 @@ export class StatisticsComponent implements OnInit, OnDestroy {
    * Unsubscribe from all the electron ipc events
    */
   ngOnDestroy() {
+    this.electronService.ipcRenderer.removeListener('missing-assets-stats', this.handleMissingAssetsStats);
     this.eventSubscriptionMap.forEach((value) => {
       value.unsubscribe();
     });

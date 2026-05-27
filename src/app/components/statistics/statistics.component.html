@@ -94,15 +94,6 @@
 
     <button
       class="wizard-button"
-      (click)="addMissingThumbnails()"
-      (mouseup)="animateThis($event)"
-      [ngClass]="{ 'button-hidden': !removeFoldersMode }"
-    >
-      {{ 'STATISTICS.addMissingThumbnails' | translate }}
-    </button>
-
-    <button
-      class="wizard-button"
       (click)="cleanScreenshotFolder()"
       (mouseup)="animateThis($event)"
       title="{{ 'STATISTICS.cleanScreenshotsHint' | translate }}"
@@ -295,6 +286,65 @@
       </tr>
     </table>
 
+  </div>
+
+  <span class="stats-heading title sources missing-assets-title">{{ 'STATISTICS.missingAssets' | translate }}</span>
+
+  <div class="missing-assets-section">
+    <p class="missing-assets-hint">{{ 'STATISTICS.generateMissingAssetsHint' | translate }}</p>
+
+    <div class="missing-assets-stats-grid">
+      <div class="missing-assets-stat-row">
+        <span>{{ 'STATISTICS.missingAssetsVideosChecked' | translate }}</span>
+        <span class="missing-assets-stat-value">{{ missingAssetsStats.videosChecked | number:'.0' }}</span>
+      </div>
+      <div class="missing-assets-stat-row">
+        <span>{{ 'STATISTICS.missingAssetsVideosWithMissing' | translate }}</span>
+        <span class="missing-assets-stat-value">{{ missingAssetsStats.videosWithMissingAssets | number:'.0' }}</span>
+      </div>
+      <div class="missing-assets-stat-row">
+        <span>{{ 'STATISTICS.missingAssetsThumbnails' | translate }}</span>
+        <span class="missing-assets-stat-value">{{ missingAssetsStats.missingThumbnails | number:'.0' }}</span>
+      </div>
+      <div class="missing-assets-stat-row">
+        <span>{{ 'STATISTICS.missingAssetsFilmstrips' | translate }}</span>
+        <span class="missing-assets-stat-value">{{ missingAssetsStats.missingFilmstrips | number:'.0' }}</span>
+      </div>
+      <div class="missing-assets-stat-row" *ngIf="screenshotSettings.clipSnippets > 0">
+        <span>{{ 'STATISTICS.missingAssetsClips' | translate }}</span>
+        <span class="missing-assets-stat-value">{{ missingAssetsStats.missingClips | number:'.0' }}</span>
+      </div>
+      <div class="missing-assets-stat-row" *ngIf="screenshotSettings.clipSnippets > 0">
+        <span>{{ 'STATISTICS.missingAssetsClipThumbnails' | translate }}</span>
+        <span class="missing-assets-stat-value">{{ missingAssetsStats.missingClipThumbnails | number:'.0' }}</span>
+      </div>
+      <div class="missing-assets-stat-row missing-assets-stat-total">
+        <span>{{ 'STATISTICS.missingAssetsTotal' | translate }}</span>
+        <span class="missing-assets-stat-value">{{ missingAssetsStats.totalMissingAssets | number:'.0' }}</span>
+      </div>
+    </div>
+
+    <div class="missing-assets-actions">
+      <button
+        class="wizard-button start-import"
+        (click)="generateMissingAssets()"
+        (mouseup)="animateThis($event)"
+      >
+        {{ 'STATISTICS.generateMissingAssets' | translate }}
+      </button>
+
+      <button
+        class="wizard-button"
+        (click)="refreshMissingAssetsStats()"
+        [ngClass]="{ 'edit-mode-active': missingAssetsLoading }"
+      >
+        {{ 'STATISTICS.refreshMissingAssetsStats' | translate }}
+      </button>
+
+      <span *ngIf="missingAssetsLoading" class="missing-assets-loading">
+        {{ 'STATISTICS.refreshingMissingAssetsStats' | translate }}
+      </span>
+    </div>
   </div>
 
 </div>
