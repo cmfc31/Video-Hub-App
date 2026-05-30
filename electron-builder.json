@@ -33,9 +33,10 @@
   "win": {
     "icon": "dist/favicon",
     "asar": true,
+    "signAndEditExecutable": false,
     "asarUnpack": [
-      "../node_modules/ffmpeg-static",
-      "../node_modules/node-ffprobe-installer"
+      "node_modules/ffmpeg-static/**",
+      "node_modules/@ffprobe-installer/**"
     ],
     "target": [
       "nsis",
@@ -54,8 +55,8 @@
     "icon": "src/assets/icons.icns",
     "asar": true,
     "asarUnpack": [
-      "../node_modules/ffmpeg-static",
-      "../node_modules/node-ffprobe-installer"
+      "node_modules/ffmpeg-static/**",
+      "node_modules/@ffprobe-installer/**"
     ]
   },
   "linux": {
