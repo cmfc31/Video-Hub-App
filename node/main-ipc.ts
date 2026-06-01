@@ -281,6 +281,10 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
   ipc.on('add-missing-thumbnails', (event, finalArray: ImageElement[], extractClips: boolean) => {
     const screenshotOutputFolder: string = path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName);
     const missingOnly = getElementsWithMissingAssets(finalArray, screenshotOutputFolder, extractClips);
+    const allHashes = getLiveVideoHashes(finalArray);
+
+    // Keep the asset folder aligned with the current vha2 contents.
+    removeThumbnailsNotInHub(allHashes, screenshotOutputFolder);
     extractAnyMissingThumbs(missingOnly);
   });
 
@@ -297,14 +301,7 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
     // !!! WARNING
     const screenshotOutputFolder: string = path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName);
     // !! ^^^^^^^^^^^^^^^^^^^^^^ - make sure this points to the folder with screenshots only!
-
-    const allHashes: Map<string, 1> = new Map();
-
-    finalArray
-      .filter((element: ImageElement) => { return !element.deleted; })
-      .forEach((element: ImageElement) => {
-        allHashes.set(element.hash, 1);
-      });
+    const allHashes = getLiveVideoHashes(finalArray);
     removeThumbnailsNotInHub(allHashes, screenshotOutputFolder); // WARNING !!! this function will delete stuff
   });
 
@@ -510,4 +507,18 @@ function getElementsWithMissingAssets(
       shouldExtractClips
     );
   });
+}
+
+function getLiveVideoHashes(finalArray: ImageElement[]): Map<string, 1> {
+  const allHashes: Map<string, 1> = new Map();
+
+  (finalArray || [])
+    .filter((element: ImageElement) => {
+      return !element.deleted && element.cleanName !== '*FOLDER*';
+    })
+    .forEach((element: ImageElement) => {
+      allHashes.set(element.hash, 1);
+    });
+
+  return allHashes;
 }
