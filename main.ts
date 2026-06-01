@@ -92,6 +92,9 @@ if (!gotTheLock) {
 
 function createWindow() {
   const desktopSize = screen.getPrimaryDisplay().workAreaSize;
+  const appIconPath = serve
+    ? path.join(__dirname, 'src/assets/logo.png')
+    : path.join(__dirname, 'dist/favicon.ico');
 
   screenWidth = desktopSize.width;
   screenHeight = desktopSize.height;
@@ -146,7 +149,7 @@ function createWindow() {
     center: true,
     minWidth: 420,
     minHeight: 250,
-    icon: path.join(__dirname, 'src/assets/icons/png/64x64.png'),
+    icon: appIconPath,
     frame: false  // removes the frame from the window completely
   });
   mainWindowState.manage(win);

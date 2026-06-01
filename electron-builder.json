@@ -36,8 +36,8 @@
     }
   ],
   "win": {
-    "icon": "dist/favicon",
-    "signAndEditExecutable": false,
+    "icon": "src/favicon.ico",
+    "signAndEditExecutable": true,
     "extraResources": [
       {
         "from": "node_modules/ffmpeg-static/ffmpeg.exe",
@@ -92,6 +92,9 @@
     ]
   },
   "nsis": {
+    "installerIcon": "src/favicon.ico",
+    "uninstallerIcon": "src/favicon.ico",
+    "installerHeaderIcon": "src/favicon.ico",
     "oneClick": false,
     "perMachine": true
   },
