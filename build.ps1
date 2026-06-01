@@ -28,9 +28,21 @@ function Write-Step([string]$Message) {
 }
 
 if (-not (Test-Administrator)) {
-    Write-Host "This build must be run as Administrator (required for electron-builder icon embedding)." -ForegroundColor Red
-    Write-Host "Right-click PowerShell and choose 'Run as administrator', then run .\build.ps1 again." -ForegroundColor Yellow
-    exit 1
+    Write-Host "Administrator rights are required. Requesting elevation..." -ForegroundColor Yellow
+    $scriptPath = $MyInvocation.MyCommand.Path
+    $escapedArgs = $args | ForEach-Object { '"' + ($_ -replace '"', '\"') + '"' }
+    $argumentString = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+    if ($escapedArgs.Count -gt 0) {
+        $argumentString += " " + ($escapedArgs -join " ")
+    }
+
+    try {
+        Start-Process -FilePath "powershell.exe" -ArgumentList $argumentString -Verb RunAs | Out-Null
+        exit 0
+    } catch {
+        Write-Host "Elevation was cancelled or failed. Build cannot continue." -ForegroundColor Red
+        exit 1
+    }
 }
 
 Set-Location $PSScriptRoot
@@ -75,4 +87,6 @@ if ($exitCode -eq 0) {
     Write-Host "Build failed with exit code $exitCode." -ForegroundColor Red
 }
 
+Write-Host ""
+Read-Host "Press Enter to close"
 exit $exitCode
