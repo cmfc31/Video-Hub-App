@@ -25,9 +25,10 @@ const fs = require('fs');
 import * as path from 'path';
 const spawn = require('child_process').spawn;
 const exec = require('child_process').exec;
+import { resolveSpawnableExecutablePath } from './ffmpeg-paths';
 
-const ffmpegPath = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
-const ffprobePath = require('@ffprobe-installer/ffprobe').path.replace('app.asar', 'app.asar.unpacked');
+const ffmpegPath = resolveSpawnableExecutablePath(require('ffmpeg-static'), 'ffmpeg');
+const ffprobePath = resolveSpawnableExecutablePath(require('@ffprobe-installer/ffprobe').path, 'ffprobe');
 
 import { GLOBALS } from './main-globals';
 
@@ -746,20 +747,29 @@ function spawn_ffmpeg_and_run(
   description: string
 ): Promise<boolean> {
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
 
     // Uncomment things in this method (and the `performance` import) to check how long extraction takes
     // const t0: number = performance.now();
 
     const ffmpeg_process = spawn(ffmpegPath, ['-nostdin', '-y', ...args]);
     let timedOut = false;
+    let settled = false;
+
+    const settle = (success: boolean): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(success);
+    };
 
     const killProcessTimeout = setTimeout(() => {
       if (!ffmpeg_process.killed) {
         timedOut = true;
         ffmpeg_process.kill();
         // console.log(description + ' KILLED EARLY');
-        return resolve(false);
+        return settle(false);
       }
     }, maxRunningTime);
 
@@ -782,7 +792,15 @@ function spawn_ffmpeg_and_run(
       if (timedOut) {
         return;
       }
-      return resolve(code === 0);
+      return settle(code === 0);
+    });
+
+    ffmpeg_process.on('error', (error) => {
+      clearTimeout(killProcessTimeout);
+      if (GLOBALS.debug) {
+        console.log('ffmpeg spawn error (' + description + '):', error);
+      }
+      settle(false);
     });
 
   });

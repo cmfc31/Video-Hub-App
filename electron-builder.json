@@ -5,6 +5,11 @@
   "directories": {
     "output": "release/"
   },
+  "asar": true,
+  "asarUnpack": [
+    "**/node_modules/ffmpeg-static/**",
+    "**/node_modules/@ffprobe-installer/**"
+  ],
   "files": [
     "**/*",
     "!**/*.ts",
@@ -32,11 +37,16 @@
   ],
   "win": {
     "icon": "dist/favicon",
-    "asar": true,
     "signAndEditExecutable": false,
-    "asarUnpack": [
-      "node_modules/ffmpeg-static/**",
-      "node_modules/@ffprobe-installer/**"
+    "extraResources": [
+      {
+        "from": "node_modules/ffmpeg-static/ffmpeg.exe",
+        "to": "bin/ffmpeg.exe"
+      },
+      {
+        "from": "node_modules/@ffprobe-installer/win32-${arch}/ffprobe.exe",
+        "to": "bin/ffprobe.exe"
+      }
     ],
     "target": [
       "nsis",
@@ -54,13 +64,29 @@
     },
     "icon": "src/assets/icons.icns",
     "asar": true,
-    "asarUnpack": [
-      "node_modules/ffmpeg-static/**",
-      "node_modules/@ffprobe-installer/**"
+    "extraResources": [
+      {
+        "from": "node_modules/ffmpeg-static/ffmpeg",
+        "to": "bin/ffmpeg"
+      },
+      {
+        "from": "node_modules/@ffprobe-installer/darwin-${arch}/ffprobe",
+        "to": "bin/ffprobe"
+      }
     ]
   },
   "linux": {
     "icon": "src/assets/icons.icns",
+    "extraResources": [
+      {
+        "from": "node_modules/ffmpeg-static/ffmpeg",
+        "to": "bin/ffmpeg"
+      },
+      {
+        "from": "node_modules/@ffprobe-installer/linux-${arch}/ffprobe",
+        "to": "bin/ffprobe"
+      }
+    ],
     "target": [
       "AppImage"
     ]

@@ -10,9 +10,10 @@ import type { VhaGlobals } from './main-globals';
 import { GLOBALS } from './main-globals'; // TODO -- eliminate dependence on `GLOBALS` in this file!
 
 import * as path from 'path';
+import { resolveSpawnableExecutablePath } from './ffmpeg-paths';
 
 const exec = require('child_process').exec;
-const ffprobePath = require('@ffprobe-installer/ffprobe').path.replace('app.asar', 'app.asar.unpacked');
+const ffprobePath = resolveSpawnableExecutablePath(require('@ffprobe-installer/ffprobe').path, 'ffprobe');
 const fs = require('fs');
 const hasher = require('crypto').createHash;
 import type { Stats } from 'fs';
