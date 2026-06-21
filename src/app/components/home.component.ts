@@ -574,6 +574,9 @@ export class HomeComponent implements OnInit, AfterViewInit {
     // happens when user replaced a thumbnail and process is done
     this.electronService.ipcRenderer.on('thumbnail-replaced', (event) => {
       this.electronService.webFrame.clearCache();
+      this.zone.run(() => {
+        this.modalService.openSnackbar(this.translate.instant('SETTINGS.thumbnailUpdated'), 'success-snackbar');
+      });
     });
 
     this.electronService.ipcRenderer.on('touchBar-to-app', (event, changesFromTouchBar: SettingsButtonKey | SupportedView) => {
@@ -1148,12 +1151,9 @@ export class HomeComponent implements OnInit, AfterViewInit {
       return;
     }
 
-    // ctrl + shift => set thumbnail as favorite
+    // ctrl + shift => replace the saved thumbnail file with the clicked frame
     if (eventObject.mouseEvent.ctrlKey === true && eventObject.mouseEvent.shiftKey) {
-      this.imageElementService.HandleEmission({
-        index: item.index,
-        defaultScreen: eventObject.thumbIndex as number
-      });
+      this.electronService.ipcRenderer.send('replace-thumbnail-with-frame', item, eventObject.thumbIndex as number);
 
       return;
     }

@@ -34,3 +34,13 @@ html, body {
     text-align: center;
   }
 }
+
+// Green variant used for success messages (e.g. thumbnail replaced)
+.success-snackbar {
+  --mdc-snackbar-container-color: #{variables.$pretty-green};
+
+  .mdc-snackbar__surface {
+    background: variables.$pretty-green !important;
+    border: 1px solid variables.$pretty-green;
+  }
+}

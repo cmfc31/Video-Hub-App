@@ -9,7 +9,7 @@ import { GLOBALS } from './main-globals';
 import { ImageElement, FinalObject, InputSources } from '../interfaces/final-object.interface';
 import { SettingsObject } from '../interfaces/settings-object.interface';
 import { createDotPlsFile, writeVhaFileToDisk } from './main-support';
-import { replaceThumbnailWithNewImage } from './main-extract';
+import { replaceThumbnailWithNewImage, replaceThumbnailWithVideoFrame } from './main-extract';
 import { closeWatcher, startWatcher, extractAnyMissingThumbs, removeThumbnailsNotInHub } from './main-extract-async';
 
 /**
@@ -220,6 +220,24 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
 
     replaceThumbnailWithNewImage(fileToReplace, pathToIncomingJpg, height)
       .then(success => {
+        if (success) {
+          event.sender.send('thumbnail-replaced');
+        }
+      })
+      .catch((err) => {});
+
+  });
+
+  /**
+   * Replace the thumbnail of an item with a frame taken from the source video
+   * at the position of the clicked filmstrip screenshot
+   */
+  ipc.on('replace-thumbnail-with-frame', (event, item: ImageElement, screenIndex: number) => {
+    const screenshotOutputFolder: string = path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName);
+    const videoFolderPath: string = GLOBALS.selectedSourceFolders[item.inputSource].path;
+
+    replaceThumbnailWithVideoFrame(item, videoFolderPath, screenshotOutputFolder, GLOBALS.screenshotSettings, screenIndex)
+      .then((success: boolean) => {
         if (success) {
           event.sender.send('thumbnail-replaced');
         }

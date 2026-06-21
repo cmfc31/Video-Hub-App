@@ -213,6 +213,8 @@ function getVideoColorProfile(pathToVideo: string): Promise<VideoColorProfile> {
  * @param screenshotHeight
  * @param duration
  * @param savePath
+ * @param isHdr
+ * @param seekTimeSeconds -- optional explicit seek position; defaults to duration / 10
  */
 const extractSingleFrameArgs = (
   pathToVideo: string,
@@ -220,12 +222,15 @@ const extractSingleFrameArgs = (
   duration: number,
   savePath: string,
   isHdr: boolean,
+  seekTimeSeconds?: number,
 ): string[] => {
 
   const ssWidth: number = screenshotHeight * (16 / 9);
 
+  const seekTime: number = seekTimeSeconds === undefined ? duration / 10 : seekTimeSeconds;
+
   const args: string[] = [
-    '-ss', (duration / 10).toString(),
+    '-ss', seekTime.toString(),
     '-i', pathToVideo,
     '-frames:v', '1',
     '-q:v', FFMPEG_JPEG_QUALITY,
@@ -689,6 +694,49 @@ export function replaceThumbnailWithNewImage(
 
   return run_ffmpeg_with_decode_acceleration(args, 1000, 'replacing thumbnail');
   // resizing an image file with ffmpeg should take less than 1 second
+}
+
+/**
+ * Re-extract a single frame from the source video at the position of the clicked
+ * filmstrip screenshot and overwrite the existing thumbnail in the /thumbnails folder.
+ *
+ * The screenshot at `screenIndex` in the filmstrip corresponds to time
+ *   (screenIndex + 1) * duration / (numOfScreens + 1)
+ * which matches the timing used by `generateScreenshotStripArgs`.
+ *
+ * @param currentElement     -- ImageElement whose thumbnail to replace
+ * @param videoFolderPath    -- path to base folder where the video is
+ * @param screenshotFolder   -- path to folder where .jpg files are saved
+ * @param screenshotSettings -- ScreenshotSettings object
+ * @param screenIndex        -- index of the clicked screenshot in the filmstrip
+ */
+export function replaceThumbnailWithVideoFrame(
+  currentElement: ImageElement,
+  videoFolderPath: string,
+  screenshotFolder: string,
+  screenshotSettings: ScreenshotSettings,
+  screenIndex: number,
+): Promise<boolean> {
+
+  const screenshotHeight: number = screenshotSettings.height;
+  const pathToVideo: string = path.join(videoFolderPath, currentElement.partialPath, currentElement.fileName);
+  const duration: number = currentElement.duration;
+  const fileHash: string = currentElement.hash;
+  const numOfScreens: number = currentElement.screens;
+
+  const thumbnailSavePath: string = path.normalize(screenshotFolder + '/thumbnails/' + fileHash + '.jpg');
+
+  const step: number = duration / (numOfScreens + 1);
+  const seekTime: number = (screenIndex + 1) * step;
+
+  return getVideoColorProfile(pathToVideo)
+    .then((colorProfile: VideoColorProfile) => {
+      const ffmpegArgs: string[] = extractSingleFrameArgs(
+        pathToVideo, screenshotHeight, duration, thumbnailSavePath, colorProfile.isHdr, seekTime
+      );
+
+      return run_ffmpeg_with_decode_acceleration(ffmpegArgs, 2000, 'replace thumbnail with frame');
+    });
 }
 
 /**

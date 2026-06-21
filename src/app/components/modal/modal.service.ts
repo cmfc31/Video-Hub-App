@@ -50,13 +50,15 @@ export class ModalService {
   }
 
   /**
-   * Show "snack bar" / "toaster" at the bottom center with error message for 1.5 seconds
-   * @param errorMessage
+   * Show "snack bar" / "toaster" at the bottom center with a message for 1.5 seconds
+   * @param message
+   * @param panelClass -- styling variant; defaults to the red 'custom-snackbar'
+   *                      pass 'success-snackbar' for the green success variant
    */
-  openSnackbar(errorMessage: string) {
-    this.snack.open(errorMessage, '', {
+  openSnackbar(message: string, panelClass: string = 'custom-snackbar') {
+    this.snack.open(message, '', {
       duration: 1500,
-      panelClass: ['custom-snackbar']
+      panelClass: [panelClass]
     });
   }
 
