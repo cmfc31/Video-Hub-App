@@ -167,7 +167,19 @@ export class StatisticsComponent implements OnInit, OnDestroy {
   computeAverages() {
     console.log(this.inputFolders());
 
-    this.imageElementService.imageElements.forEach((element: ImageElement): void => {
+    // reset running totals so re-computing (e.g. after a rescan) doesn't accumulate stale values
+    this.shortest = Infinity;
+    this.longest = 0;
+    this.totalLength = 0;
+    this.smallest = Infinity;
+    this.largest = 0;
+    this.totalSize = 0;
+
+    // exclude videos marked `deleted` (removed from disk during a rescan) so counters reflect what remains
+    const liveElements: ImageElement[] = this.imageElementService.imageElements
+      .filter((element: ImageElement): boolean => !element.deleted);
+
+    liveElements.forEach((element: ImageElement): void => {
       this.shortest = Math.min(element.duration, this.shortest);
       this.longest = Math.max(element.duration, this.longest);
       this.totalLength += element.duration;
@@ -177,7 +189,7 @@ export class StatisticsComponent implements OnInit, OnDestroy {
       this.totalSize += element.fileSize;
     });
 
-    this.totalFiles = this.imageElementService.imageElements.length;
+    this.totalFiles = liveElements.length;
 
     this.avgLength = Math.round(this.totalLength / this.totalFiles);
     this.avgSize = Math.round(this.totalSize / this.totalFiles);
@@ -288,6 +300,8 @@ export class StatisticsComponent implements OnInit, OnDestroy {
     this.tellNodeStartWatching(index, inputFolders[index].path, false);
     setTimeout(() => {
       this.refreshMissingAssetsStats();
+      this.computeAverages(); // refresh "number of files" etc. now that deleted videos are marked
+      this.cd.detectChanges();
     }, 1000);
     setTimeout(() => {
       this.cd.detectChanges(); // to update template whether to show "Rescan" or not

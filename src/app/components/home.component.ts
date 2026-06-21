@@ -663,6 +663,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
       if (somethingDeleted) {
         this.deletePipeHack = !this.deletePipeHack;
+        this.imageElementService.finalArrayNeedsSaving = true; // persist the removal so deleted videos don't return on reopen
       }
 
     });
@@ -682,6 +683,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
             console.log('FILE DELETED !!!', partialPath);
             element.deleted = true;
             this.deletePipeHack = !this.deletePipeHack;
+            this.imageElementService.finalArrayNeedsSaving = true; // persist the removal so deleted videos don't return on reopen
           }
         });
     });
