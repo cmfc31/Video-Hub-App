@@ -697,46 +697,46 @@ export function replaceThumbnailWithNewImage(
 }
 
 /**
- * Re-extract a single frame from the source video at the position of the clicked
- * filmstrip screenshot and overwrite the existing thumbnail in the /thumbnails folder.
+ * Replace the thumbnail of an item by cropping the clicked screenshot straight out
+ * of the already-generated filmstrip .jpg, overwriting the existing thumbnail.
  *
- * The screenshot at `screenIndex` in the filmstrip corresponds to time
- *   (screenIndex + 1) * duration / (numOfScreens + 1)
- * which matches the timing used by `generateScreenshotStripArgs`.
+ * The filmstrip is `numOfScreens` equal-width tiles stacked horizontally (see
+ * `generateScreenshotStripArgs`), and each tile is generated at the exact same
+ * dimensions as the thumbnail, so cropping tile `screenIndex` reproduces the frame
+ * without decoding the source video. This is faster and more reliable than
+ * re-extracting from source, and works even when the source drive is offline.
  *
- * @param currentElement     -- ImageElement whose thumbnail to replace
- * @param videoFolderPath    -- path to base folder where the video is
- * @param screenshotFolder   -- path to folder where .jpg files are saved
- * @param screenshotSettings -- ScreenshotSettings object
- * @param screenIndex        -- index of the clicked screenshot in the filmstrip
+ * @param currentElement   -- ImageElement whose thumbnail to replace
+ * @param screenshotFolder -- path to the `vha-<hubName>` folder holding thumbnails/ and filmstrips/
+ * @param screenIndex      -- index of the clicked screenshot in the filmstrip (0-based)
  */
-export function replaceThumbnailWithVideoFrame(
+export function replaceThumbnailWithFilmstripFrame(
   currentElement: ImageElement,
-  videoFolderPath: string,
   screenshotFolder: string,
-  screenshotSettings: ScreenshotSettings,
   screenIndex: number,
 ): Promise<boolean> {
 
-  const screenshotHeight: number = screenshotSettings.height;
-  const pathToVideo: string = path.join(videoFolderPath, currentElement.partialPath, currentElement.fileName);
-  const duration: number = currentElement.duration;
   const fileHash: string = currentElement.hash;
   const numOfScreens: number = currentElement.screens;
 
+  const filmstripPath: string = path.normalize(screenshotFolder + '/filmstrips/' + fileHash + '.jpg');
   const thumbnailSavePath: string = path.normalize(screenshotFolder + '/thumbnails/' + fileHash + '.jpg');
 
-  const step: number = duration / (numOfScreens + 1);
-  const seekTime: number = (screenIndex + 1) * step;
+  // clamp so a click on the very right edge can't index past the last tile
+  const tileIndex: number = Math.max(0, Math.min(screenIndex, numOfScreens - 1));
 
-  return getVideoColorProfile(pathToVideo)
-    .then((colorProfile: VideoColorProfile) => {
-      const ffmpegArgs: string[] = extractSingleFrameArgs(
-        pathToVideo, screenshotHeight, duration, thumbnailSavePath, colorProfile.isHdr, seekTime
-      );
+  // each tile is exactly iw/numOfScreens wide; crop the tile at tileIndex
+  const cropFilter: string = 'crop=iw/' + numOfScreens + ':ih:iw/' + numOfScreens + '*' + tileIndex + ':0';
 
-      return run_ffmpeg_with_decode_acceleration(ffmpegArgs, 2000, 'replace thumbnail with frame');
-    });
+  const args: string[] = [
+    '-i', filmstripPath,
+    '-vf', cropFilter,
+    '-frames:v', '1',
+    '-q:v', FFMPEG_JPEG_QUALITY,
+    thumbnailSavePath,
+  ];
+
+  return spawn_ffmpeg_and_run(args, 2000, 'crop thumbnail from filmstrip');
 }
 
 /**
