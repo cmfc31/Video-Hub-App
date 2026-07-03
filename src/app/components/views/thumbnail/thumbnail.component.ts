@@ -1,5 +1,7 @@
 import type { OnInit, ElementRef, OnDestroy } from '@angular/core';
-import { Component, Input, input, output, viewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, Input, input, output, viewChild } from '@angular/core';
+
+import { Subscription } from 'rxjs';
 
 import { FilePathService } from '../file-path.service';
 
@@ -54,8 +56,10 @@ export class ThumbnailComponent implements OnInit, OnDestroy {
   indexToShow = 1;
   percentOffset = 0;
   scrollInterval: any = null;
+  thumbnailReplacedSubscription: Subscription;
 
   constructor(
+    public cd: ChangeDetectorRef,
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
   ) { }
@@ -77,6 +81,17 @@ export class ThumbnailComponent implements OnInit, OnDestroy {
       this.hover = true;
       this.percentOffset = this.defaultScreenOffset(this.video);
     }
+
+    // when this video's thumbnail file gets replaced on disk, the URL stays the same,
+    // so cache-bust it to force Chromium to re-fetch the freshly-written image
+    this.thumbnailReplacedSubscription = this.imageElementService.thumbnailReplaced
+      .subscribe((hash: string) => {
+        if (hash === this.video.hash) {
+          this.firstFilePath = this.filePathService
+            .createFilePath(this.folderPath(), this.hubName(), 'thumbnails', this.video.hash) + '?' + Date.now();
+          this.cd.detectChanges();
+        }
+      });
   }
 
   defaultScreenOffset(video: ImageElement): number {
@@ -124,6 +139,7 @@ export class ThumbnailComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     clearInterval(this.scrollInterval);
+    this.thumbnailReplacedSubscription?.unsubscribe();
   }
 
   toggleHeart(): void {

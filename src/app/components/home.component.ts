@@ -572,9 +572,11 @@ export class HomeComponent implements OnInit, AfterViewInit {
     });
 
     // happens when user replaced a thumbnail and process is done
-    this.electronService.ipcRenderer.on('thumbnail-replaced', (event) => {
+    this.electronService.ipcRenderer.on('thumbnail-replaced', (event, hash: string) => {
       this.electronService.webFrame.clearCache();
       this.zone.run(() => {
+        // force the affected thumbnail(s) to re-fetch the freshly-written file from disk
+        this.imageElementService.thumbnailReplaced.next(hash);
         this.modalService.openSnackbar(this.translate.instant('SETTINGS.thumbnailUpdated'), 'success-snackbar');
       });
     });

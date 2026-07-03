@@ -221,7 +221,7 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
     replaceThumbnailWithNewImage(fileToReplace, pathToIncomingJpg, height)
       .then(success => {
         if (success) {
-          event.sender.send('thumbnail-replaced');
+          event.sender.send('thumbnail-replaced', item.hash);
         }
       })
       .catch((err) => {});
@@ -238,7 +238,7 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
     replaceThumbnailWithFilmstripFrame(item, screenshotOutputFolder, screenIndex)
       .then((success: boolean) => {
         if (success) {
-          event.sender.send('thumbnail-replaced');
+          event.sender.send('thumbnail-replaced', item.hash);
         }
       })
       .catch((err) => {});

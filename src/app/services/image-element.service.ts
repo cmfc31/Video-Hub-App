@@ -2,6 +2,7 @@ import type { TagEmission } from './../../../interfaces/shared-interfaces';
 import type { YearEmission} from './../components/views/details/details.component';
 import type { ImageElement } from './../../../interfaces/final-object.interface';
 import { Injectable } from '@angular/core';
+import { Subject } from 'rxjs';
 import type { DefaultScreenEmission, StarEmission } from '../components/sheet/sheet.component';
 
 @Injectable({ providedIn: 'root' })
@@ -10,6 +11,9 @@ export class ImageElementService {
   public finalArrayNeedsSaving = false;
   public forceStarFilterUpdate = true;
   public imageElements: ImageElement[] = [];
+
+  /** emits the `hash` of a thumbnail whose image file was just replaced on disk */
+  public thumbnailReplaced = new Subject<string>();
 
   constructor() { }
 
