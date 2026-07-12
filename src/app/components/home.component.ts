@@ -46,6 +46,8 @@ import {
   AllSupportedBottomTrayViews,
   AllSupportedViews
 } from '../../../interfaces/shared-interfaces';
+import { computeReorderMtimes } from '../common/reorder-mtime';
+import type { MtimeUpdate } from '../common/reorder-mtime';
 
 // Constants, etc
 import type { SupportedLanguage, RowNumbers } from '../common/app-state';
@@ -333,6 +335,16 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
   remoteSettings: RemoteSettings;
 
+  /** Hash of video currently being drag-reordered (manual Date Modified sort) */
+  reorderDragHash: string = null;
+  /** Hash of video under the reorder drag pointer */
+  reorderDragOverHash: string = null;
+  /** Pending mtime updates waiting for IPC confirmation */
+  private pendingMtimeUpdates: MtimeUpdate[] = [];
+  /** Last pointer Y during reorder drag (for edge auto-scroll) */
+  private reorderDragClientY: number = null;
+  private reorderAutoScrollRaf: number = null;
+
   // Behavior Subjects for IPC events:
 
   inputSorceChosenBehaviorSubject: BehaviorSubject<string> = new BehaviorSubject(undefined);
@@ -496,6 +508,16 @@ export class HomeComponent implements OnInit, AfterViewInit {
         this.modalService.openSnackbar(this.translate.instant('SETTINGS.fileNotFound'));
       });
     });
+
+    // After Node finishes updating filesystem mtimes for drag-reorder
+    this.electronService.ipcRenderer.on(
+      'update-video-mtimes-response',
+      (event, results: { fullPath: string, success: boolean }[]) => {
+        this.zone.run(() => {
+          this.handleMtimeUpdateResponse(results);
+        });
+      }
+    );
 
     // when `remote-control` requests to open video
     this.electronService.ipcRenderer.on('remote-open-video', (event, video: RemoteVideoClick) => {
@@ -945,6 +967,235 @@ export class HomeComponent implements OnInit, AfterViewInit {
   }
 
   /**
+   * Manual drag-reorder is available when Show folders is off and sort is Date Modified descending
+   */
+  isManualSortActive(): boolean {
+    return !this.settingsButtons['showFolders'].toggled
+      && this.sortType === 'modifiedDesc'
+      && !this.settingsButtons['duplicateLength'].toggled
+      && !this.settingsButtons['duplicateSize'].toggled
+      && !this.settingsButtons['duplicateHash'].toggled;
+  }
+
+  /**
+   * Start an in-gallery reorder drag (takes priority over drag-out-of-app)
+   */
+  onReorderDragStart(event: DragEvent, item: ImageElement): void {
+    if (!this.isManualSortActive() || item.cleanName === '*FOLDER*') {
+      event.preventDefault();
+      return;
+    }
+
+    event.dataTransfer.setData('application/vha-reorder', item.hash);
+    // text/plain fallback — some Electron/Chromium builds only reliably expose text types
+    event.dataTransfer.setData('text/plain', 'vha-reorder:' + item.hash);
+    event.dataTransfer.effectAllowed = 'move';
+    this.reorderDragHash = item.hash;
+    this.reorderDragClientY = event.clientY;
+    this.startReorderAutoScroll();
+  }
+
+  /**
+   * Allow drop and highlight the current target while reordering
+   */
+  onReorderDragOver(event: DragEvent, item: ImageElement): void {
+    if (!this.isManualSortActive() || item.cleanName === '*FOLDER*') {
+      return;
+    }
+
+    const types = Array.from(event.dataTransfer.types || []);
+    // Prefer the custom type for highlight; text/plain alone may be a tag drag
+    if (!types.includes('application/vha-reorder')) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    this.reorderDragClientY = event.clientY;
+    if (this.reorderDragOverHash !== item.hash) {
+      this.reorderDragOverHash = item.hash;
+    }
+  }
+
+  /**
+   * Track pointer position anywhere while reordering so edge auto-scroll keeps working
+   */
+  @HostListener('document:dragover', ['$event'])
+  onDocumentReorderDragOver(event: DragEvent): void {
+    if (!this.reorderDragHash) {
+      return;
+    }
+    this.reorderDragClientY = event.clientY;
+  }
+
+  /**
+   * Clear reorder drag highlight state
+   */
+  onReorderDragEnd(): void {
+    this.stopReorderAutoScroll();
+    this.reorderDragHash = null;
+    this.reorderDragOverHash = null;
+    this.reorderDragClientY = null;
+  }
+
+  /**
+   * Auto-scroll the gallery when dragging near the top or bottom edge
+   */
+  private startReorderAutoScroll(): void {
+    this.stopReorderAutoScroll();
+
+    const tick = () => {
+      if (!this.reorderDragHash) {
+        this.reorderAutoScrollRaf = null;
+        return;
+      }
+      this.applyReorderAutoScroll();
+      this.reorderAutoScrollRaf = requestAnimationFrame(tick);
+    };
+
+    this.reorderAutoScrollRaf = requestAnimationFrame(tick);
+  }
+
+  private stopReorderAutoScroll(): void {
+    if (this.reorderAutoScrollRaf != null) {
+      cancelAnimationFrame(this.reorderAutoScrollRaf);
+      this.reorderAutoScrollRaf = null;
+    }
+  }
+
+  private applyReorderAutoScroll(): void {
+    if (this.reorderDragClientY == null) {
+      return;
+    }
+
+    const scrollEl = document.getElementById('scrollDiv');
+    if (!scrollEl) {
+      return;
+    }
+
+    const rect = scrollEl.getBoundingClientRect();
+    const edgePx = 72;
+    const maxSpeed = 22;
+    let delta = 0;
+
+    if (this.reorderDragClientY < rect.top + edgePx) {
+      const intensity = (rect.top + edgePx - this.reorderDragClientY) / edgePx;
+      delta = -Math.ceil(maxSpeed * Math.min(1, Math.max(0, intensity)));
+    } else if (this.reorderDragClientY > rect.bottom - edgePx) {
+      const intensity = (this.reorderDragClientY - (rect.bottom - edgePx)) / edgePx;
+      delta = Math.ceil(maxSpeed * Math.min(1, Math.max(0, intensity)));
+    }
+
+    if (delta !== 0) {
+      scrollEl.scrollTop += delta;
+    }
+  }
+
+  /**
+   * Read the dragged video hash from the drag payload (custom type or text fallback)
+   */
+  private getReorderDragHash(event: DragEvent): string {
+    const custom = event.dataTransfer.getData('application/vha-reorder');
+    if (custom) {
+      return custom;
+    }
+
+    const text = event.dataTransfer.getData('text/plain') || event.dataTransfer.getData('text') || '';
+    if (text.startsWith('vha-reorder:')) {
+      return text.slice('vha-reorder:'.length);
+    }
+
+    return '';
+  }
+
+  /**
+   * Drop a video onto another to reorder by updating mtimes
+   */
+  onReorderDrop(event: DragEvent, target: ImageElement): void {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const draggedHash = this.getReorderDragHash(event);
+    this.onReorderDragEnd();
+
+    if (!draggedHash) {
+      this.droppedSomethingOverVideo(event, target);
+      return;
+    }
+
+    if (!this.isManualSortActive() || target.cleanName === '*FOLDER*') {
+      return;
+    }
+
+    const gallery = this.pipeSideEffectService.galleryShowing;
+    const fromIndex = gallery.findIndex((el) => el.hash === draggedHash);
+    const toIndex = gallery.findIndex((el) => el.hash === target.hash);
+
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+      return;
+    }
+
+    const updates = computeReorderMtimes(gallery, fromIndex, toIndex);
+    if (!updates.length) {
+      return;
+    }
+
+    for (const update of updates) {
+      if (!this.sourceFolderService.sourceFolderConnected[update.element.inputSource]) {
+        this.modalService.openSnackbar(this.translate.instant('SETTINGS.rootFolderNotLive'));
+        return;
+      }
+    }
+
+    this.pendingMtimeUpdates = updates;
+
+    const payload = updates.map((update) => ({
+      fullPath: this.filePathService.getPathFromImageElement(update.element),
+      mtimeMs: update.mtimeMs,
+    }));
+
+    this.electronService.ipcRenderer.send('update-video-mtimes', payload);
+  }
+
+  /**
+   * Apply hub mtime updates for files that Node successfully touched
+   */
+  private handleMtimeUpdateResponse(results: { fullPath: string, success: boolean }[]): void {
+    const pending = this.pendingMtimeUpdates;
+    this.pendingMtimeUpdates = [];
+
+    if (!pending.length) {
+      return;
+    }
+
+    const successByPath = new Map(
+      (results || []).map((result) => [result.fullPath, result.success])
+    );
+
+    const applied: MtimeUpdate[] = [];
+    let anyFailed = false;
+
+    pending.forEach((update) => {
+      const fullPath = this.filePathService.getPathFromImageElement(update.element);
+      if (successByPath.get(fullPath)) {
+        applied.push(update);
+      } else {
+        anyFailed = true;
+      }
+    });
+
+    if (applied.length) {
+      this.imageElementService.applyMtimeUpdates(applied);
+      this.shuffleTheViewNow++;
+      this.cd.detectChanges();
+    }
+
+    if (anyFailed) {
+      this.modalService.openSnackbar(this.translate.instant('SETTINGS.fileNotFound'));
+    }
+  }
+
+  /**
    * Only update the view after enough changes occurred
    * - update after every new element when < 20 elements total
    * - update every 20 new elements after until 100; every 100 thereafter
@@ -1003,6 +1254,11 @@ export class HomeComponent implements OnInit, AfterViewInit {
     if (event.dataTransfer.getData('text')) {
       // tag previously set by `dragStart` in `view-tags.component`
       const tag: string = event.dataTransfer.getData('text');
+
+      // ignore reorder drag payload fallback
+      if (tag.startsWith('vha-reorder:')) {
+        return;
+      }
 
       this.addTagToThisElement(tag, galleryItem);
 

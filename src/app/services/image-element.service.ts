@@ -4,6 +4,7 @@ import type { ImageElement } from './../../../interfaces/final-object.interface'
 import { Injectable } from '@angular/core';
 import { Subject } from 'rxjs';
 import type { DefaultScreenEmission, StarEmission } from '../components/sheet/sheet.component';
+import type { MtimeUpdate } from '../common/reorder-mtime';
 
 @Injectable({ providedIn: 'root' })
 export class ImageElementService {
@@ -16,6 +17,22 @@ export class ImageElementService {
   public thumbnailReplaced = new Subject<string>();
 
   constructor() { }
+
+  /**
+   * Apply mtime updates to hub metadata and force the gallery pipe chain to re-evaluate
+   */
+  applyMtimeUpdates(updates: MtimeUpdate[]): void {
+    if (!updates.length) {
+      return;
+    }
+
+    updates.forEach((update) => {
+      update.element.mtime = update.mtimeMs;
+    });
+
+    this.finalArrayNeedsSaving = true;
+    this.imageElements = this.imageElements.slice();
+  }
 
   /**
    * Update imageElements with emission of element

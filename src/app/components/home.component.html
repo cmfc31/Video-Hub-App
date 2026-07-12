@@ -892,10 +892,12 @@
           (rightClick)=" (item.cleanName === '*FOLDER*') ? doNothing()                               : rightMouseClicked($event.mouseEvent, $event.item)"
 
           (sheetClick)="this.openThumbnailSheet(item)"
-          (drop)="droppedSomethingOverVideo($event, item)"
+          (drop)="isManualSortActive() ? onReorderDrop($event, item) : droppedSomethingOverVideo($event, item)"
+          (dragover)="onReorderDragOver($event, item)"
+          (dragend)="onReorderDragEnd()"
 
-          [draggable]="settingsButtons['dragVideoOutOfApp'].toggled"
-          (dragstart)="draggingVideoFile($event, item)"
+          [draggable]="isManualSortActive() || settingsButtons['dragVideoOutOfApp'].toggled"
+          (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
 
           [video]="item"
 
@@ -917,6 +919,10 @@
           [thumbAutoAdvance]="settingsButtons['thumbAutoAdvance'].toggled"
 
           style="display: inline-block"
+          [ngClass]="{
+              'reorder-drag-over': reorderDragOverHash === item.hash,
+              'reorder-dragging': reorderDragHash === item.hash
+            }"
           [ngStyle]="{
               height:   previewHeight
                       + textPaddingHeight
@@ -936,10 +942,12 @@
           (videoClick)="handleClick($event, item)"
           (rightClick)="(item.cleanName === '*FOLDER*') ? doNothing() : rightMouseClicked($event.mouseEvent, $event.item)"
 
-          (drop)="droppedSomethingOverVideo($event, item)"
+          (drop)="isManualSortActive() ? onReorderDrop($event, item) : droppedSomethingOverVideo($event, item)"
+          (dragover)="onReorderDragOver($event, item)"
+          (dragend)="onReorderDragEnd()"
 
-          [draggable]="settingsButtons['dragVideoOutOfApp'].toggled"
-          (dragstart)="draggingVideoFile($event, item)"
+          [draggable]="isManualSortActive() || settingsButtons['dragVideoOutOfApp'].toggled"
+          (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
 
           [video]="item"
 
@@ -956,6 +964,10 @@
           [showMeta]="settingsButtons['showMoreInfo'].toggled"
 
           style="display: block"
+          [ngClass]="{
+              'reorder-drag-over': reorderDragOverHash === item.hash,
+              'reorder-dragging': reorderDragHash === item.hash
+            }"
           [ngStyle]="{
               height:   previewHeight
                       + textPaddingHeight
@@ -974,10 +986,12 @@
           (videoClick)="handleClick($event, item)"
           (rightClick)="rightMouseClicked($event.mouseEvent, $event.item)"
 
-          (drop)="droppedSomethingOverVideo($event, item)"
+          (drop)="isManualSortActive() ? onReorderDrop($event, item) : droppedSomethingOverVideo($event, item)"
+          (dragover)="onReorderDragOver($event, item)"
+          (dragend)="onReorderDragEnd()"
 
-          [draggable]="settingsButtons['dragVideoOutOfApp'].toggled"
-          (dragstart)="draggingVideoFile($event, item)"
+          [draggable]="isManualSortActive() || settingsButtons['dragVideoOutOfApp'].toggled"
+          (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
 
           [video]="item"
 
@@ -993,6 +1007,10 @@
           [showMeta]="settingsButtons['showMoreInfo'].toggled"
 
           style="display: block"
+          [ngClass]="{
+              'reorder-drag-over': reorderDragOverHash === item.hash,
+              'reorder-dragging': reorderDragHash === item.hash
+            }"
          />
       }
     }
@@ -1006,10 +1024,12 @@
           (dblclick)="   (item.cleanName === '*FOLDER*') ? handleFolderIconClicked(item.partialPath) : handleClick({ mouseEvent: $event }, item, true)"
           (contextmenu)="(item.cleanName === '*FOLDER*') ? doNothing()                               : rightMouseClicked($event, item)"
 
-          (drop)="droppedSomethingOverVideo($event, item)"
+          (drop)="isManualSortActive() ? onReorderDrop($event, item) : droppedSomethingOverVideo($event, item)"
+          (dragover)="onReorderDragOver($event, item)"
+          (dragend)="onReorderDragEnd()"
 
-          [draggable]="settingsButtons['dragVideoOutOfApp'].toggled"
-          (dragstart)="draggingVideoFile($event, item)"
+          [draggable]="isManualSortActive() || settingsButtons['dragVideoOutOfApp'].toggled"
+          (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
           [video]="item"
           [showFavorites]="settingsButtons['favorites'].toggled"
 
@@ -1018,6 +1038,10 @@
           [showMeta]="settingsButtons['showMoreInfo'].toggled"
 
           style="display: block"
+          [ngClass]="{
+              'reorder-drag-over': reorderDragOverHash === item.hash,
+              'reorder-dragging': reorderDragHash === item.hash
+            }"
          />
       }
     }
@@ -1031,10 +1055,12 @@
           (rightClick)="rightMouseClicked($event.mouseEvent, $event.item)"
           (filterTag)="handleTagWordClicked($event.tag.name, $event.event)"
 
-          (drop)="droppedSomethingOverVideo($event, item)"
+          (drop)="isManualSortActive() ? onReorderDrop($event, item) : droppedSomethingOverVideo($event, item)"
+          (dragover)="onReorderDragOver($event, item)"
+          (dragend)="onReorderDragEnd()"
 
-          [draggable]="settingsButtons['dragVideoOutOfApp'].toggled"
-          (dragstart)="draggingVideoFile($event, item)"
+          [draggable]="isManualSortActive() || settingsButtons['dragVideoOutOfApp'].toggled"
+          (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
 
           [video]="item"
 
@@ -1064,6 +1090,10 @@
 
           [renameResponse]="renameFileResponseBehaviorSubject"
 
+          [ngClass]="{
+              'reorder-drag-over': reorderDragOverHash === item.hash,
+              'reorder-dragging': reorderDragHash === item.hash
+            }"
           [ngStyle]="{ display: appState.currentView === 'showDetails' ? 'block' : 'inline-block' }"
          />
       }
@@ -1079,10 +1109,12 @@
 
           (sheetClick)="this.openThumbnailSheet(item)"
 
-          (drop)="droppedSomethingOverVideo($event, item)"
+          (drop)="isManualSortActive() ? onReorderDrop($event, item) : droppedSomethingOverVideo($event, item)"
+          (dragover)="onReorderDragOver($event, item)"
+          (dragend)="onReorderDragEnd()"
 
-          [draggable]="settingsButtons['dragVideoOutOfApp'].toggled"
-          (dragstart)="draggingVideoFile($event, item)"
+          [draggable]="isManualSortActive() || settingsButtons['dragVideoOutOfApp'].toggled"
+          (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
 
           [video]="item"
 
@@ -1102,6 +1134,10 @@
           [showMeta]="settingsButtons['showMoreInfo'].toggled"
 
           style="display: inline-block"
+          [ngClass]="{
+              'reorder-drag-over': reorderDragOverHash === item.hash,
+              'reorder-dragging': reorderDragHash === item.hash
+            }"
          />
       }
     }

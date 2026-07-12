@@ -338,6 +338,35 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
   });
 
   /**
+   * Update filesystem mtime (and atime) for one or more video files
+   * Used by drag-to-reorder when sorting by Date Modified descending
+   */
+  ipc.on('update-video-mtimes', (
+    event,
+    updates: { fullPath: string, mtimeMs: number }[]
+  ): void => {
+    const results: { fullPath: string, success: boolean }[] = [];
+
+    (updates || []).forEach((update) => {
+      let success = true;
+      try {
+        if (!fs.existsSync(update.fullPath)) {
+          success = false;
+        } else {
+          const date = new Date(update.mtimeMs);
+          fs.utimesSync(update.fullPath, date, date);
+        }
+      } catch (err) {
+        console.log('Failed to update mtime for', update.fullPath, err);
+        success = false;
+      }
+      results.push({ fullPath: update.fullPath, success });
+    });
+
+    event.sender.send('update-video-mtimes-response', results);
+  });
+
+  /**
    * Try to rename the particular file
    */
   ipc.on('try-to-rename-this-file', (event, sourceFolder: string, relPath: string, file: string, renameTo: string, index: number): void => {
