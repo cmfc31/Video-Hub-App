@@ -29,6 +29,7 @@ import { SortOrderComponent } from './sort-order/sort-order.component';
 // Interfaces
 import type { ContextMenuCoordinate } from '../../../interfaces/shared-interfaces';
 import type { FinalObject, ImageElement, ScreenshotSettings, ResolutionString } from '../../../interfaces/final-object.interface';
+import { isPartialPathUnderPrefix } from '../../../interfaces/novha.util';
 import { formatFileSize, refreshFileSizeDisplays } from '../../../interfaces/file-size.util';
 import type { ImportStage } from '../../../node/main-support';
 import type { ServerDetails } from './statistics/statistics.component';
@@ -669,27 +670,25 @@ export class HomeComponent implements OnInit, AfterViewInit {
       }
 
       const rootFolder: string = this.sourceFolderService.selectedSourceFolder[sourceIndex].path;
+      const foundFiles = (allFilesMap && typeof allFilesMap.has === 'function')
+        ? allFilesMap
+        : new Map<string, 1>();
 
-      let somethingDeleted = false;
-
-      this.imageElementService.imageElements
+      this.markVideosDeletedAndCleanup((element: ImageElement) => {
         // tslint:disable-next-line:triple-equals
-        .filter((element: ImageElement) => { return element.inputSource == sourceIndex; })
-        // notice the loosey-goosey comparison! this is because number  ^^  string comparison happening here!
-        .forEach((element: ImageElement) => {
-          // console.log(element.fileName);
-          if (!allFilesMap.has(path.join(rootFolder, element.partialPath, element.fileName))) {
-            console.log('deleting: ', element.fileName);
-            element.deleted = true;
-            somethingDeleted = true;
-          }
-        });
+        return element.inputSource == sourceIndex
+          && !foundFiles.has(path.join(rootFolder, element.partialPath, element.fileName));
+      });
 
-      if (somethingDeleted) {
-        this.deletePipeHack = !this.deletePipeHack;
-        this.imageElementService.finalArrayNeedsSaving = true; // persist the removal so deleted videos don't return on reopen
-      }
+    });
 
+    // A `.novha` marker excludes a folder and all of its subfolders from the hub
+    this.electronService.ipcRenderer.on('exclude-folder-from-hub', (event, sourceIndex: number, prefix: string) => {
+      this.markVideosDeletedAndCleanup((element: ImageElement) => {
+        // tslint:disable-next-line:triple-equals
+        return element.inputSource == sourceIndex
+          && isPartialPathUnderPrefix(element.partialPath, prefix);
+      });
     });
 
     // When `watch` folder and `chokidar` detects a file was deleted (can happen when renamed too!)
@@ -876,6 +875,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
         this.imageElementService.imageElements[element.index].deleted = true;
         this.deletePipeHack = !this.deletePipeHack;
         this.imageElementService.finalArrayNeedsSaving = true;
+        this.electronService.ipcRenderer.send('save-vha-file', this.getFinalObjectForSaving());
         this.cd.detectChanges();
       }
     });
@@ -1286,6 +1286,36 @@ export class HomeComponent implements OnInit, AfterViewInit {
   private resetFinalArrayRef(): void {
     this.newVideoImportCounter = 0;
     this.imageElementService.imageElements = this.imageElementService.imageElements.slice();
+    this.cd.detectChanges();
+  }
+
+  /**
+   * Soft-delete matching catalog rows, remove their screenshot/preview files, and persist the hub.
+   */
+  private markVideosDeletedAndCleanup(shouldDelete: (element: ImageElement) => boolean): void {
+    const hashes: string[] = [];
+
+    this.imageElementService.imageElements.forEach((element: ImageElement) => {
+      if (element.deleted || element.cleanName === '*FOLDER*') {
+        return;
+      }
+      if (shouldDelete(element)) {
+        console.log('excluding from hub:', element.fileName);
+        element.deleted = true;
+        if (element.hash) {
+          hashes.push(element.hash);
+        }
+      }
+    });
+
+    if (hashes.length === 0) {
+      return;
+    }
+
+    this.deletePipeHack = !this.deletePipeHack;
+    this.imageElementService.finalArrayNeedsSaving = true;
+    this.electronService.ipcRenderer.send('delete-video-assets', hashes);
+    this.electronService.ipcRenderer.send('save-vha-file', this.getFinalObjectForSaving());
     this.cd.detectChanges();
   }
 
@@ -2490,9 +2520,19 @@ export class HomeComponent implements OnInit, AfterViewInit {
   }
 
   /**
-   * Deletes a file (moves to recycling bin / trash) or dangerously deletes (bypassing trash)
+   * Deletes a file (moves to recycling bin / trash) or dangerously deletes (bypassing trash),
+   * then removes it from the hub and deletes related screenshot / preview assets
    */
   deleteThisFile(item: ImageElement): void {
+    if (!this.sourceFolderService.sourceFolderConnected[item.inputSource]) {
+      return;
+    }
+
+    const confirmed: boolean = confirm(this.translate.instant('RIGHTCLICK.deleteConfirm', { name: item.fileName }));
+    if (!confirmed) {
+      return;
+    }
+
     const base: string = this.sourceFolderService.selectedSourceFolder[item.inputSource].path;
     const dangerously: boolean = this.settingsButtons['dangerousDelete'].toggled;
     this.electronService.ipcRenderer.send('delete-video-file', base, item, dangerously);

@@ -106,14 +106,12 @@
       >
                                                                 {{ 'RIGHTCLICK.openFolder'  | translate }}</li>
       <li (click)="openThumbnailSheet(currentRightClickedItem)">{{ 'RIGHTCLICK.sheetModal'  | translate }}</li>
-    @if (settingsButtons['showDeleteOption'].toggled) {
       <li
         (click)="deleteThisFile(currentRightClickedItem)"
         class="right-click-delete"
         [ngClass]="{ 'right-click-disabled': !sourceFolderService.sourceFolderConnected[currentRightClickedItem.inputSource] }"
       >
                                                                 {{ 'RIGHTCLICK.delete'      | translate }}</li>
-    }
     </ul>
   </div>
 }

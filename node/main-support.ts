@@ -21,7 +21,7 @@ import type { Stats } from 'fs';
 import type { FinalObject, ImageElement, ScreenshotSettings, InputSources, ResolutionString } from '../interfaces/final-object.interface';
 import { NewImageElement } from '../interfaces/final-object.interface';
 import { formatFileSize } from '../interfaces/file-size.util';
-import { startFileSystemWatching, resetWatchers } from './main-extract-async';
+import { startFileSystemWatching, resetWatchers, sweepNovhaForSource } from './main-extract-async';
 
 interface ResolutionMeta {
   label: ResolutionString;
@@ -200,6 +200,9 @@ function markDuplicatesAsDeleted(imagesArray: ImageElement[]): ImageElement[] {
  * @param done          -- function to execute when done writing the file
  */
 export function writeVhaFileToDisk(finalObject: FinalObject, pathToTheFile: string, done): void {
+
+  // Clone so mid-session saves do not mutate the live gallery array
+  finalObject = JSON.parse(JSON.stringify(finalObject));
 
   finalObject.images = finalObject.images.filter(element => !element.deleted);
 
@@ -620,6 +623,9 @@ export function setUpDirectoryWatchers(inputDirs: InputSources, currentImages: I
 
       if (!err) {
         GLOBALS.angularApp.sender.send('directory-now-connected', parseInt(key, 10), pathToDir);
+
+        // Always honor `.novha` even when this source is not being scanned/watched
+        sweepNovhaForSource(parseInt(key, 10), pathToDir);
 
         if (shouldWatch || currentImages.length === 0) {
 

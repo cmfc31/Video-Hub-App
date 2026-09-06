@@ -15,6 +15,14 @@ import type { ImageElement, ImageElementPlus } from '../interfaces/final-object.
 import { acceptableFiles } from './main-filenames';
 import { extractAll } from './main-extract';
 import { sendCurrentProgress, insertTemporaryFieldsSingle, extractMetadataAsync, cleanUpFileName } from './main-support';
+import {
+  findNovhaFolderPaths,
+  folderHasNovha,
+  folderToPartialPath,
+  isNovhaFileName,
+  isPathInsideFolder,
+  isUnderNovha,
+} from './novha';
 
 export interface TempMetadataQueueObject {
   fullPath: string;
@@ -137,6 +145,11 @@ export function resetAllQueues(): void {
  * @param done    -- callback to indicate the current extraction finished
  */
 function thumbQueueRunner(element: ImageElement, done): void {
+  if (isElementUnderNovha(element)) {
+    done();
+    return;
+  }
+
   const screenshotOutputFolder: string = path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName);
   const shouldExtractClips: boolean = GLOBALS.screenshotSettings.clipSnippets > 0;
 
@@ -168,6 +181,11 @@ function thumbQueueRunner(element: ImageElement, done): void {
  */
 function sendNewVideoMetadata(imageElement: ImageElementPlus): void {
 
+  if (isUnderNovha(sourceRootFor(imageElement.inputSource), imageElement.fullPath)) {
+    queuedForReimport.delete(imageElement.fullPath);
+    return;
+  }
+
   alreadyInAngular.set(imageElement.fullPath, imageElement.fileSize);
   queuedForReimport.delete(imageElement.fullPath);
 
@@ -189,6 +207,12 @@ function sendNewVideoMetadata(imageElement: ImageElementPlus): void {
  * @param done
  */
 export function metadataQueueRunner(file: TempMetadataQueueObject, done): void {
+
+  if (isUnderNovha(sourceRootFor(file.inputSource), file.fullPath)) {
+    queuedForReimport.delete(file.fullPath);
+    done();
+    return;
+  }
 
   if (metaExtractionStartTime === 0) {
     metaExtractionStartTime = performance.now();
@@ -233,8 +257,19 @@ function superFastSystemScan(inputDir: string, inputSource: number): void {
   metadataQueue.pause();
   thumbQueue.pause();
 
+  ensureFoundFilesMap(inputSource);
+
+  if (folderHasNovha(inputDir)) {
+    allFoundFilesMap.get(inputSource).clear();
+    dropTrackedPathsUnderFolder(inputSource, inputDir);
+    GLOBALS.angularApp.sender.send('exclude-folder-from-hub', inputSource, '');
+    GLOBALS.angularApp.sender.send('all-files-found-in-dir', inputSource, allFoundFilesMap.get(inputSource));
+    metadataQueue.resume();
+    return;
+  }
+
   const crawler = new fdir()
-    .exclude((dir: string) => dir.startsWith('vha-')) // .exclude `dir` is the folder name, not full path
+    .exclude((dirName: string, dirPath: string) => dirName.startsWith('vha-') || folderHasNovha(dirPath))
     .withFullPaths()
     .crawl(inputDir);
 
@@ -247,26 +282,7 @@ function superFastSystemScan(inputDir: string, inputSource: number): void {
     console.log('Found ', files.length, ' files in given directory');
     // =============================================================================================
 
-    const allAcceptableFiles: string[] = [...acceptableFiles, ...GLOBALS.additionalExtensions];
-
-    files.forEach((fullPath: string) => {
-
-      const parsed = path.parse(fullPath);
-
-      if (!allAcceptableFiles.includes(parsed.ext.substr(1).toLowerCase())) {
-        return;
-      }
-
-      if (!allFoundFilesMap.has(inputSource)) {
-        allFoundFilesMap.set(inputSource, new Map());
-      }
-      allFoundFilesMap.get(inputSource).set(fullPath, 1);
-
-      const partial: string = path.relative(inputDir, parsed.dir).replace(/\\/g, '/');
-
-      queueVideoIfNeeded(fullPath, inputSource, parsed.base, '/' + partial);
-
-    });
+    enqueueFoundVideoFiles(inputDir, inputSource, files);
 
     GLOBALS.angularApp.sender.send('all-files-found-in-dir', inputSource, allFoundFilesMap.get(inputSource));
 
@@ -319,20 +335,31 @@ export function startFileSystemWatching(inputDir: string, inputSource: number, p
   thumbQueue.pause();
 
   const handleFoundFile = (filePath: string) => {
+    const normalizedRel = filePath.replace(/\\/g, '/');
+    const baseName = path.basename(normalizedRel);
+
+    if (isNovhaFileName(baseName)) {
+      const folderRel = path.dirname(normalizedRel);
+      excludeFolderFromHub(inputSource, inputDir, folderRel === '.' ? '' : folderRel);
+      return;
+    }
+
     const ext = filePath.substring(filePath.lastIndexOf('.') + 1).toLowerCase();
 
     if (!allAcceptableFiles.includes(ext)) {
       return;
     }
 
-    const subPath = ('/' + filePath.replace(/\\/g, '/')).replace('//', '/');
+    const subPath = ('/' + normalizedRel).replace('//', '/');
     const partialPath = subPath.substring(0, subPath.lastIndexOf('/'));
     const fileName = subPath.substring(subPath.lastIndexOf('/') + 1);
     const fullPath = path.join(inputDir, partialPath, fileName);
 
-    if (!allFoundFilesMap.has(inputSource)) {
-      allFoundFilesMap.set(inputSource, new Map());
+    if (isUnderNovha(inputDir, fullPath)) {
+      return;
     }
+
+    ensureFoundFilesMap(inputSource);
     allFoundFilesMap.get(inputSource).set(fullPath, 1);
 
     queueVideoIfNeeded(fullPath, inputSource, fileName, partialPath);
@@ -342,6 +369,13 @@ export function startFileSystemWatching(inputDir: string, inputSource: number, p
     .on('add', handleFoundFile)
     .on('change', handleFoundFile)
     .on('unlink', (partialFilePath: string) => {    // note: this happens even when file is renamed!
+      const normalizedRel = partialFilePath.replace(/\\/g, '/');
+      if (isNovhaFileName(path.basename(normalizedRel))) {
+        const folderRel = path.dirname(normalizedRel);
+        includeFolderAndRescan(inputSource, inputDir, folderRel === '.' ? '' : folderRel);
+        return;
+      }
+
       console.log(' !!! FILE DELETED, updating Angular:', partialFilePath);
       GLOBALS.angularApp.sender.send('single-file-deleted', inputSource, partialFilePath);
       // remove element from `alreadyInAngular`
@@ -409,6 +443,10 @@ function queueVideoIfNeeded(
   name: string,
   partialPath: string
 ): void {
+  if (isUnderNovha(sourceRootFor(inputSource), fullPath)) {
+    return;
+  }
+
   if (queuedForReimport.has(fullPath)) {
     return;
   }
@@ -468,6 +506,106 @@ export function startWatcher(inputSource: number, folderPath: string, persistent
 }
 
 /**
+ * Drop already-imported videos under any `.novha` folder, even when watch/scan is off.
+ */
+export function sweepNovhaForSource(inputSource: number, inputDir: string): void {
+  findNovhaFolderPaths(inputDir).then((folders: string[]) => {
+    folders.forEach((folderFull: string) => {
+      dropTrackedPathsUnderFolder(inputSource, folderFull);
+      const prefix = folderToPartialPath(inputDir, folderFull);
+      GLOBALS.angularApp.sender.send('exclude-folder-from-hub', inputSource, prefix);
+    });
+  });
+}
+
+function sourceRootFor(inputSource: number): string {
+  return GLOBALS.selectedSourceFolders[inputSource] && GLOBALS.selectedSourceFolders[inputSource].path;
+}
+
+function isElementUnderNovha(element: ImageElement): boolean {
+  const sourceRoot = sourceRootFor(element.inputSource);
+  if (!sourceRoot) {
+    return false;
+  }
+  return isUnderNovha(sourceRoot, path.join(sourceRoot, element.partialPath, element.fileName));
+}
+
+function ensureFoundFilesMap(inputSource: number): void {
+  if (!allFoundFilesMap.has(inputSource)) {
+    allFoundFilesMap.set(inputSource, new Map());
+  }
+}
+
+function enqueueFoundVideoFiles(inputDir: string, inputSource: number, files: string[]): void {
+  const allAcceptableFiles: string[] = [...acceptableFiles, ...GLOBALS.additionalExtensions];
+
+  ensureFoundFilesMap(inputSource);
+
+  files.forEach((fullPath: string) => {
+    const parsed = path.parse(fullPath);
+
+    if (!allAcceptableFiles.includes(parsed.ext.substr(1).toLowerCase())) {
+      return;
+    }
+
+    if (isUnderNovha(inputDir, fullPath)) {
+      return;
+    }
+
+    allFoundFilesMap.get(inputSource).set(fullPath, 1);
+
+    const partial: string = path.relative(inputDir, parsed.dir).replace(/\\/g, '/');
+
+    queueVideoIfNeeded(fullPath, inputSource, parsed.base, '/' + partial);
+  });
+}
+
+function dropTrackedPathsUnderFolder(inputSource: number, folderFull: string): void {
+  Array.from(alreadyInAngular.keys()).forEach((fullPath: string) => {
+    if (isPathInsideFolder(fullPath, folderFull)) {
+      alreadyInAngular.delete(fullPath);
+    }
+  });
+
+  Array.from(queuedForReimport.keys()).forEach((fullPath: string) => {
+    if (isPathInsideFolder(fullPath, folderFull)) {
+      queuedForReimport.delete(fullPath);
+    }
+  });
+
+  const found = allFoundFilesMap.get(inputSource);
+  if (found) {
+    Array.from(found.keys()).forEach((fullPath: string) => {
+      if (isPathInsideFolder(fullPath, folderFull)) {
+        found.delete(fullPath);
+      }
+    });
+  }
+}
+
+function excludeFolderFromHub(inputSource: number, inputDir: string, folderRel: string): void {
+  const folderFull = folderRel ? path.join(inputDir, folderRel) : inputDir;
+  console.log('Excluding .novha folder:', folderFull);
+  dropTrackedPathsUnderFolder(inputSource, folderFull);
+  GLOBALS.angularApp.sender.send('exclude-folder-from-hub', inputSource, folderToPartialPath(inputDir, folderFull));
+}
+
+function includeFolderAndRescan(inputSource: number, inputDir: string, folderRel: string): void {
+  const folderFull = folderRel ? path.join(inputDir, folderRel) : inputDir;
+  console.log('Re-including folder after .novha removed:', folderFull);
+
+  const crawler = new fdir()
+    .exclude((dirName: string, dirPath: string) => dirName.startsWith('vha-') || folderHasNovha(dirPath))
+    .withFullPaths()
+    .crawl(folderFull);
+
+  crawler.withPromise().then((files: string[]) => {
+    enqueueFoundVideoFiles(inputDir, inputSource, files || []);
+    metadataQueue.resume();
+  }).catch(() => {});
+}
+
+/**
  * Check if thumbnail, flimstrip, and clip is present
  * return boolean
  * @param fileHash           - unique identifier of the file
@@ -519,6 +657,9 @@ export function extractAnyMissingThumbs(fullArray: ImageElement[]): void {
     thumbQueue.resume();
   }
   fullArray.forEach((element: ImageElement) => {
+    if (element.deleted || isElementUnderNovha(element)) {
+      return;
+    }
     thumbQueue.push(element);
   });
 
@@ -533,6 +674,9 @@ export function extractAnyMissingThumbs(fullArray: ImageElement[]): void {
         }
         initializeThumbQueue();
         fullArray.forEach((element: ImageElement) => {
+          if (element.deleted || isElementUnderNovha(element)) {
+            return;
+          }
           thumbQueue.push(element);
         });
       }

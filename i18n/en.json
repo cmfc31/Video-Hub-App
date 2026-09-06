@@ -238,6 +238,7 @@
   "RIGHTCLICK": {
     "cancelRename": "cancel rename",
     "delete": "Delete",
+    "deleteConfirm": "Delete \"{{name}}\"?\n\nThis removes the video from disk and this hub, and deletes its thumbnail, filmstrip, and preview clip.",
     "errorFileNameExists": "A file exists with this filename",
     "errorFileNotFound": "Original file could not be found",
     "errorMustBeDifferent": "new file name must be different",

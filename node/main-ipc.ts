@@ -173,7 +173,7 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
     if (dangerousDelete) {
 
       fs.unlink(fileToDelete, (err) => {
-        if (err) {
+        if (err && err.code !== 'ENOENT') {
           console.log('ERROR:', fileToDelete + ' was NOT deleted');
         } else {
           notifyFileDeleted(event, fileToDelete, item);
@@ -183,10 +183,36 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
     } else {
 
       (async () => {
-        await trash(fileToDelete);
-        notifyFileDeleted(event, fileToDelete, item);
+        try {
+          if (fs.existsSync(fileToDelete)) {
+            await trash(fileToDelete);
+          }
+          notifyFileDeleted(event, fileToDelete, item);
+        } catch (err) {
+          console.log('ERROR:', fileToDelete + ' was NOT deleted');
+        }
       })();
 
+    }
+  });
+
+  /**
+   * Delete generated screenshot / preview files for the given hashes
+   */
+  ipc.on('delete-video-assets', (event, hashes: string[]): void => {
+    (hashes || []).forEach((hash: string) => {
+      deleteRelatedVideoAssets(hash);
+    });
+  });
+
+  /**
+   * Persist the current hub to disk without quitting
+   */
+  ipc.on('save-vha-file', (event, finalObjectToSave: FinalObject) => {
+    if (finalObjectToSave !== null && GLOBALS.currentlyOpenVhaFile) {
+      writeVhaFileToDisk(finalObjectToSave, GLOBALS.currentlyOpenVhaFile, () => {
+        console.log('.vha2 file saved after delete');
+      });
     }
   });
 
@@ -200,6 +226,7 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
     fs.access(fileToDelete, fs.constants.F_OK, (err: any) => {
       if (err) {
         console.log('FILE DELETED SUCCESS !!!');
+        deleteRelatedVideoAssets(item.hash);
         event.sender.send('file-deleted', item);
       }
     });
@@ -567,4 +594,25 @@ function getLiveVideoHashes(finalArray: ImageElement[]): Map<string, 1> {
     });
 
   return allHashes;
+}
+
+/**
+ * Delete generated screenshot / preview files for a single video hash
+ */
+function deleteRelatedVideoAssets(hash: string): void {
+  if (!hash || !GLOBALS.selectedOutputFolder || !GLOBALS.hubName) {
+    return;
+  }
+
+  const assetRoot = path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName);
+  const assetsToDelete = [
+    path.join(assetRoot, 'thumbnails', hash + '.jpg'),
+    path.join(assetRoot, 'filmstrips', hash + '.jpg'),
+    path.join(assetRoot, 'clips', hash + '.mp4'),
+    path.join(assetRoot, 'clips', hash + '.jpg'),
+  ];
+
+  assetsToDelete.forEach((assetPath: string) => {
+    fs.unlink(assetPath, () => {});
+  });
 }
