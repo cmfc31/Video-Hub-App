@@ -1,4 +1,4 @@
-import type { OnInit, ElementRef, OnDestroy } from '@angular/core';
+import type { OnInit, ElementRef, OnDestroy, OnChanges, SimpleChanges } from '@angular/core';
 import { ChangeDetectorRef, Component, Input, input, output, viewChild } from '@angular/core';
 
 import { Subscription } from 'rxjs';
@@ -23,7 +23,7 @@ import type { VideoClickEmit, RightClickEmit } from '../../../../../interfaces/s
   ],
   animations: [textAppear, metaAppear]
 })
-export class ThumbnailComponent implements OnInit, OnDestroy {
+export class ThumbnailComponent implements OnInit, OnChanges, OnDestroy {
 
   readonly filmstripHolder = viewChild<ElementRef>('filmstripHolder');
 
@@ -64,7 +64,30 @@ export class ThumbnailComponent implements OnInit, OnDestroy {
     public imageElementService: ImageElementService,
   ) { }
 
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['video'] && this.video) {
+      this.refreshMediaPaths();
+    }
+  }
+
   ngOnInit() {
+    this.refreshMediaPaths();
+
+    // when this video's thumbnail file gets replaced on disk, the URL stays the same,
+    // so cache-bust it to force Chromium to re-fetch the freshly-written image
+    this.thumbnailReplacedSubscription = this.imageElementService.thumbnailReplaced
+      .subscribe((hash: string) => {
+        if (hash === this.video.hash) {
+          this.firstFilePath = this.filePathService
+            .createFilePath(this.folderPath(), this.hubName(), 'thumbnails', this.video.hash) + '?' + Date.now();
+          this.cd.detectChanges();
+        }
+      });
+  }
+
+  refreshMediaPaths() {
+    this.folderThumbPaths = [];
+
     // multiple hashes == folder view
     if (this.video.hash.indexOf(':') !== -1) {
       const hashes = this.video.hash.split(':');
@@ -80,18 +103,10 @@ export class ThumbnailComponent implements OnInit, OnDestroy {
     if (this.video.defaultScreen) {
       this.hover = true;
       this.percentOffset = this.defaultScreenOffset(this.video);
+    } else {
+      this.hover = false;
+      this.percentOffset = 0;
     }
-
-    // when this video's thumbnail file gets replaced on disk, the URL stays the same,
-    // so cache-bust it to force Chromium to re-fetch the freshly-written image
-    this.thumbnailReplacedSubscription = this.imageElementService.thumbnailReplaced
-      .subscribe((hash: string) => {
-        if (hash === this.video.hash) {
-          this.firstFilePath = this.filePathService
-            .createFilePath(this.folderPath(), this.hubName(), 'thumbnails', this.video.hash) + '?' + Date.now();
-          this.cd.detectChanges();
-        }
-      });
   }
 
   defaultScreenOffset(video: ImageElement): number {

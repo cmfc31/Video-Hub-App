@@ -1,5 +1,5 @@
 import { ChangeDetectorRef, input, output } from '@angular/core';
-import type { OnInit } from '@angular/core';
+import type { OnChanges, OnInit, SimpleChanges } from '@angular/core';
 import { Component, HostListener, Input } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 
@@ -22,7 +22,7 @@ import { metaAppear, textAppear } from '../../../common/animations';
     ],
   animations: [ textAppear, metaAppear ]
 })
-export class ClipComponent implements OnInit {
+export class ClipComponent implements OnInit, OnChanges {
 
   readonly rightClick = output<RightClickEmit>();
   readonly sheetClick = output<any>(); // does not emit data of any kind
@@ -82,7 +82,19 @@ export class ClipComponent implements OnInit {
     }
   }
 
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['video'] && this.video) {
+      this.refreshMediaPaths();
+    }
+  }
+
   ngOnInit() {
+    this.refreshMediaPaths();
+  }
+
+  refreshMediaPaths() {
+    this.folderThumbPaths = [];
+    this.folderPosterPaths = [];
 
     if (this.defaultThumbnailMode()) {
       this.posterFolderType = 'thumbnails';

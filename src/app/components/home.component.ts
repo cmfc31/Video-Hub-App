@@ -893,6 +893,8 @@ export class HomeComponent implements OnInit, AfterViewInit {
         return;
       }
 
+      const existing = this.findExistingVideoByPath(element);
+
       // if the element is part of any of the deleted videos, copy over the metadata into it !
       // important for when user renames a folder for example
       this.imageElementService.imageElements
@@ -904,6 +906,11 @@ export class HomeComponent implements OnInit, AfterViewInit {
             this.copyMetaProperties(element, deletedElement);
           }
         });
+
+      if (existing && !existing.deleted) {
+        this.replaceExistingVideoMetadata(existing, element);
+        return;
+      }
 
       if (!this.demo || this.imageElementService.imageElements.length <= 50) {
         this.applyFileSizeDisplay(element);
@@ -939,6 +946,61 @@ export class HomeComponent implements OnInit, AfterViewInit {
         }
       }
     };
+  }
+
+  /**
+   * Find a live hub entry that already occupies this source path
+   */
+  findExistingVideoByPath(element: ImageElement): ImageElement | undefined {
+    return this.imageElementService.imageElements.find((current: ImageElement) => {
+      // tslint:disable-next-line:triple-equals
+      return current.inputSource == element.inputSource
+        && current.partialPath === element.partialPath
+        && current.fileName === element.fileName;
+    });
+  }
+
+  /**
+   * Same-path file was replaced on disk: refresh extracted metadata and drop stale user tags
+   */
+  replaceExistingVideoMetadata(existing: ImageElement, incoming: ImageElement): void {
+    if (existing.tags) {
+      existing.tags.forEach((tag: string) => {
+        this.manualTagsService.removeTag(tag);
+      });
+    }
+
+    this.applyFileSizeDisplay(incoming);
+
+    if (incoming.tags) {
+      incoming.tags.forEach((tag: string) => {
+        this.manualTagsService.addTag(tag);
+      });
+    }
+
+    const replaced = this.imageElementService.replaceExistingVideo(existing, incoming);
+
+    if (this.currentClickedItem
+        && this.currentClickedItem.inputSource === existing.inputSource
+        && this.currentClickedItem.partialPath === existing.partialPath
+        && this.currentClickedItem.fileName === existing.fileName
+    ) {
+      this.updateCurrentClickedItem(replaced);
+    }
+
+    if (this.sheetItemToDisplay
+        && this.sheetItemToDisplay.inputSource === existing.inputSource
+        && this.sheetItemToDisplay.partialPath === existing.partialPath
+        && this.sheetItemToDisplay.fileName === existing.fileName
+    ) {
+      this.sheetItemToDisplay = replaced;
+    }
+
+    this.setUpDurationFilterValues(this.imageElementService.imageElements);
+    this.setUpSizeFilterValues(this.imageElementService.imageElements);
+    this.setUpTimesPlayedFilterValues(this.imageElementService.imageElements);
+    this.setUpYearFilterValues(this.imageElementService.imageElements);
+    this.debounceImport();
   }
 
   /**

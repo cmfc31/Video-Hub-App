@@ -1,4 +1,4 @@
-import type { OnInit, ElementRef} from '@angular/core';
+import type { OnChanges, OnInit, ElementRef, SimpleChanges } from '@angular/core';
 import { Component, input, output, viewChild } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 
@@ -22,7 +22,7 @@ import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/s
     ],
   animations: [ textAppear, metaAppear ]
 })
-export class FilmstripComponent implements OnInit {
+export class FilmstripComponent implements OnInit, OnChanges {
 
   readonly filmstripHolder = viewChild<ElementRef>('filmstripHolder');
 
@@ -52,7 +52,17 @@ export class FilmstripComponent implements OnInit {
     public sanitizer: DomSanitizer
   ) { }
 
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['video'] && this.video()) {
+      this.refreshMediaPaths();
+    }
+  }
+
   ngOnInit() {
+    this.refreshMediaPaths();
+  }
+
+  refreshMediaPaths() {
     this.fullFilePath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', this.video().hash);
   }
 

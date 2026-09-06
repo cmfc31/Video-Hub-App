@@ -1,4 +1,4 @@
-import type { OnInit, ElementRef} from '@angular/core';
+import type { OnChanges, OnInit, ElementRef, SimpleChanges } from '@angular/core';
 import { Component, input, output, viewChild } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 
@@ -33,7 +33,7 @@ export interface DefaultScreenEmission {
                './sheet.component.scss' ],
   animations: [ modalAnimation, textAppear, metaAppear ]
 })
-export class SheetComponent implements OnInit {
+export class SheetComponent implements OnInit, OnChanges {
 
   readonly filmstripHolder = viewChild<ElementRef>('filmstripHolder');
   readonly thumbHolder = viewChild<ElementRef>('thumbHolder');
@@ -75,10 +75,21 @@ export class SheetComponent implements OnInit {
     public sanitizer: DomSanitizer,
   ) { }
 
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['video'] && this.video()) {
+      this.refreshMediaPaths();
+    }
+  }
+
   ngOnInit() {
-    this.pathToFilmstripJpg = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', this.video().hash);
-    this.pathToVideoFile = path.join(this.selectedSourceFolder(), this.video().partialPath, this.video().fileName);
-    this.percentOffset = (100 / (this.video().screens - 1));
+    this.refreshMediaPaths();
+  }
+
+  refreshMediaPaths() {
+    const video = this.video();
+    this.pathToFilmstripJpg = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', video.hash);
+    this.pathToVideoFile = path.join(this.selectedSourceFolder(), video.partialPath, video.fileName);
+    this.percentOffset = (100 / (video.screens - 1));
     this.starRatingHack = this.star();
   }
 

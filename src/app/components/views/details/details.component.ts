@@ -1,4 +1,4 @@
-import type { OnInit, ElementRef} from '@angular/core';
+import type { OnChanges, OnInit, ElementRef, SimpleChanges } from '@angular/core';
 import { Component, input, output, viewChild } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 
@@ -26,7 +26,7 @@ export interface YearEmission {
       '../selected.scss'
     ]
 })
-export class DetailsComponent implements OnInit {
+export class DetailsComponent implements OnInit, OnChanges {
 
   readonly filmstripHolder = viewChild<ElementRef>('filmstripHolder');
 
@@ -103,12 +103,24 @@ export class DetailsComponent implements OnInit {
     event.stopPropagation();
   }
 
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['video'] && this.video()) {
+      this.refreshMediaPaths();
+    }
+  }
+
   ngOnInit() {
-    this.firstFilePath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'thumbnails', this.video().hash);
-    this.filmstripPath =  this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', this.video().hash);
+    this.refreshMediaPaths();
+  }
+
+  refreshMediaPaths() {
     const video = this.video();
+    this.firstFilePath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'thumbnails', video.hash);
+    this.filmstripPath =  this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', video.hash);
     if (video.defaultScreen !== undefined) {
       this.percentOffset = this.getDefaultScreenOffset(video);
+    } else {
+      this.percentOffset = 0;
     }
   }
 

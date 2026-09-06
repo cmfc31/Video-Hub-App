@@ -1,4 +1,4 @@
-import type { OnInit} from '@angular/core';
+import type { OnChanges, OnInit, SimpleChanges } from '@angular/core';
 import { Component, Input, input, output } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 
@@ -21,7 +21,7 @@ import type { RightClickEmit, VideoClickEmit } from '../../../../../interfaces/s
     ],
   animations: [ textAppear, metaAppear ]
 })
-export class FullViewComponent implements OnInit {
+export class FullViewComponent implements OnInit, OnChanges {
 
   readonly videoClick = output<VideoClickEmit>();
   readonly rightClick = output<RightClickEmit>();
@@ -60,7 +60,17 @@ export class FullViewComponent implements OnInit {
     public sanitizer: DomSanitizer
   ) { }
 
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['video'] && this.video()) {
+      this.refreshMediaPaths();
+    }
+  }
+
   ngOnInit() {
+    this.refreshMediaPaths();
+  }
+
+  refreshMediaPaths() {
     this.fullFilePath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', this.video().hash);
     this.render();
   }

@@ -19,6 +19,23 @@ export class ImageElementService {
   constructor() { }
 
   /**
+   * Replace an existing hub entry with freshly extracted metadata for the same path.
+   * Incoming already carries NewImageElement defaults (no stars/tags/notes).
+   */
+  replaceExistingVideo(existing: ImageElement, incoming: ImageElement): ImageElement {
+    incoming.index = existing.index;
+
+    const idx = this.imageElements.indexOf(existing);
+    if (idx !== -1) {
+      this.imageElements[idx] = incoming;
+    }
+
+    this.finalArrayNeedsSaving = true;
+    this.forceStarFilterUpdate = !this.forceStarFilterUpdate;
+    return incoming;
+  }
+
+  /**
    * Apply mtime updates to hub metadata and force the gallery pipe chain to re-evaluate
    */
   applyMtimeUpdates(updates: MtimeUpdate[]): void {

@@ -45,9 +45,10 @@ let numberOfThumbsDeleted = 0;
 
 // =====================================================================================================================
 
-// Create maps where the value = 1 always.
-// It is faster to check if key exists than searching through an array.
-let alreadyInAngular: Map<string, 1> = new Map(); // full paths to videos we have metadata for in Angular
+// Known hub videos: full path -> last seen file size.
+// Size is compared on rescan so an in-place replacement is re-imported.
+let alreadyInAngular: Map<string, number> = new Map();
+const queuedForReimport: Set<string> = new Set();
 
 // These two are together:
 const watcherMap:       Map<number, FSWatcher> = new Map();
@@ -87,6 +88,8 @@ function initializeThumbQueue(): void {
  *  - Delet queue
  */
 export function resetAllQueues(): void {
+
+  queuedForReimport.clear();
 
   allowSleep();
 
@@ -165,7 +168,8 @@ function thumbQueueRunner(element: ImageElement, done): void {
  */
 function sendNewVideoMetadata(imageElement: ImageElementPlus): void {
 
-  alreadyInAngular.set(imageElement.fullPath, 1);
+  alreadyInAngular.set(imageElement.fullPath, imageElement.fileSize);
+  queuedForReimport.delete(imageElement.fullPath);
 
   delete imageElement.fullPath; // downgrade to `ImageElement` from `ImageElementPlus`
 
@@ -211,6 +215,7 @@ export function metadataQueueRunner(file: TempMetadataQueueObject, done): void {
       sendNewVideoMetadata(imageElement);
       done();
     }, () => {
+      queuedForReimport.delete(file.fullPath);
       done(); // error, just continue
     });
 
@@ -257,20 +262,9 @@ function superFastSystemScan(inputDir: string, inputSource: number): void {
       }
       allFoundFilesMap.get(inputSource).set(fullPath, 1);
 
-      if (alreadyInAngular.has(fullPath)) {
-        return;
-      }
-
       const partial: string = path.relative(inputDir, parsed.dir).replace(/\\/g, '/');
 
-      const newItem: TempMetadataQueueObject = {
-        fullPath: fullPath,
-        inputSource: inputSource,
-        name: parsed.base,
-        partialPath: '/' + partial,
-      };
-
-      metadataQueue.push(newItem);
+      queueVideoIfNeeded(fullPath, inputSource, parsed.base, '/' + partial);
 
     });
 
@@ -324,44 +318,37 @@ export function startFileSystemWatching(inputDir: string, inputSource: number, p
   metadataQueue.pause();
   thumbQueue.pause();
 
+  const handleFoundFile = (filePath: string) => {
+    const ext = filePath.substring(filePath.lastIndexOf('.') + 1).toLowerCase();
+
+    if (!allAcceptableFiles.includes(ext)) {
+      return;
+    }
+
+    const subPath = ('/' + filePath.replace(/\\/g, '/')).replace('//', '/');
+    const partialPath = subPath.substring(0, subPath.lastIndexOf('/'));
+    const fileName = subPath.substring(subPath.lastIndexOf('/') + 1);
+    const fullPath = path.join(inputDir, partialPath, fileName);
+
+    if (!allFoundFilesMap.has(inputSource)) {
+      allFoundFilesMap.set(inputSource, new Map());
+    }
+    allFoundFilesMap.get(inputSource).set(fullPath, 1);
+
+    queueVideoIfNeeded(fullPath, inputSource, fileName, partialPath);
+  };
+
   watcher
-    .on('add', (filePath: string) => {
-
-      const ext = filePath.substring(filePath.lastIndexOf('.') + 1).toLowerCase();
-
-      if (!allAcceptableFiles.includes(ext)) {
-        return;
-      }
-
-      const subPath = ('/' + filePath.replace(/\\/g, '/')).replace('//', '/');
-      const partialPath = subPath.substring(0, subPath.lastIndexOf('/'));
-      const fileName = subPath.substring(subPath.lastIndexOf('/') + 1);
-      const fullPath = path.join(inputDir, partialPath, fileName);
-
-      if (!allFoundFilesMap.has(inputSource)) {
-        allFoundFilesMap.set(inputSource, new Map());
-      }
-      allFoundFilesMap.get(inputSource).set(fullPath, 1);
-
-      if (alreadyInAngular.has(fullPath)) {
-        return;
-      }
-
-      const newItem: TempMetadataQueueObject = {
-        fullPath: fullPath,
-        inputSource: inputSource,
-        name: fileName,
-        partialPath: partialPath,
-      };
-
-      metadataQueue.push(newItem);
-    })
+    .on('add', handleFoundFile)
+    .on('change', handleFoundFile)
     .on('unlink', (partialFilePath: string) => {    // note: this happens even when file is renamed!
       console.log(' !!! FILE DELETED, updating Angular:', partialFilePath);
       GLOBALS.angularApp.sender.send('single-file-deleted', inputSource, partialFilePath);
       // remove element from `alreadyInAngular`
       const basePath: string = GLOBALS.selectedSourceFolders[inputSource].path;
-      alreadyInAngular.delete(path.join(basePath, partialFilePath));
+      const fullPath = path.join(basePath, partialFilePath);
+      alreadyInAngular.delete(fullPath);
+      queuedForReimport.delete(fullPath);
       // note: there is no need to watch for `unlinkDir` since `unlink` fires for every file anyway!
     })
     .on('ready', () => {
@@ -397,6 +384,7 @@ export function resetWatchers(finalArray: ImageElement[]): void {
   });
 
   alreadyInAngular = new Map();
+  queuedForReimport.clear();
 
   allFoundFilesMap = new Map();
 
@@ -407,7 +395,41 @@ export function resetWatchers(finalArray: ImageElement[]): void {
       element.fileName
     );
 
-    alreadyInAngular.set(fullPath, 1);
+    alreadyInAngular.set(fullPath, element.fileSize);
+  });
+}
+
+/**
+ * Queue a video for metadata extraction when it is new or its size changed.
+ * Same path + same size is treated as already imported and skipped.
+ */
+function queueVideoIfNeeded(
+  fullPath: string,
+  inputSource: number,
+  name: string,
+  partialPath: string
+): void {
+  if (queuedForReimport.has(fullPath)) {
+    return;
+  }
+
+  if (alreadyInAngular.has(fullPath)) {
+    try {
+      if (fs.statSync(fullPath).size === alreadyInAngular.get(fullPath)) {
+        return;
+      }
+    } catch {
+      return;
+    }
+  }
+
+  queuedForReimport.add(fullPath);
+
+  metadataQueue.push({
+    fullPath: fullPath,
+    inputSource: inputSource,
+    name: name,
+    partialPath: partialPath,
   });
 }
 
