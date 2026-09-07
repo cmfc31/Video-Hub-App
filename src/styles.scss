@@ -21,8 +21,11 @@ html, body {
 
   .mat-mdc-dialog-container,
   .mat-dialog-container,
-  .mdc-dialog__surface {
+  .mdc-dialog__surface,
+  .mat-mdc-dialog-surface {
+    border-radius: 16px !important;
     max-width: 420px;
+    overflow: hidden;
   }
 
   .mdc-dialog__content,

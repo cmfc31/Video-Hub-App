@@ -1,14 +1,19 @@
-@use "variables";
+@use "../variables";
+
+.dialog-body {
+  box-sizing: border-box;
+  padding: 24px;
+}
 
 h1 {
   font-size: 16px;
-  margin-bottom: 20px;
+  margin: 0 0 16px;
   text-align: center;
 }
 
 span {
   display: block;
-  margin: 10px 10px 20px;
+  margin: 0 0 16px;
 }
 
 .message,
@@ -27,7 +32,7 @@ span {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  margin: 10px 10px 0;
+  margin: 8px 0 0;
 }
 
 .dialog-button {
