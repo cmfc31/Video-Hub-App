@@ -2528,14 +2528,18 @@ export class HomeComponent implements OnInit, AfterViewInit {
       return;
     }
 
-    const confirmed: boolean = confirm(this.translate.instant('RIGHTCLICK.deleteConfirm', { name: item.fileName }));
-    if (!confirmed) {
-      return;
-    }
+    this.modalService.openConfirm(
+      this.translate.instant('RIGHTCLICK.delete'),
+      this.translate.instant('RIGHTCLICK.deleteConfirm', { name: item.fileName })
+    ).subscribe((confirmed: boolean) => {
+      if (!confirmed) {
+        return;
+      }
 
-    const base: string = this.sourceFolderService.selectedSourceFolder[item.inputSource].path;
-    const dangerously: boolean = this.settingsButtons['dangerousDelete'].toggled;
-    this.electronService.ipcRenderer.send('delete-video-file', base, item, dangerously);
+      const base: string = this.sourceFolderService.selectedSourceFolder[item.inputSource].path;
+      const dangerously: boolean = this.settingsButtons['dangerousDelete'].toggled;
+      this.electronService.ipcRenderer.send('delete-video-file', base, item, dangerously);
+    });
   }
 
   /**

@@ -17,6 +17,8 @@ export type SortType = 'default'
                      | 'folderSizeDesc'
                      | 'fpsAsc'
                      | 'fpsDesc'
+                     | 'heightAsc'
+                     | 'heightDesc'
                      | 'hash' // only used by the duplicateFinderPipe
                      | 'lastPlayedAsc'
                      | 'lastPlayedDesc'
@@ -49,6 +51,8 @@ const sortMapping: Partial<Record<SortType, [SortOrderType, boolean]>> = {
   folderSizeDesc:  ['folderSize',   false],
   fpsAsc:          ['fps',          true],
   fpsDesc:         ['fps',          false],
+  heightAsc:       ['height',       true],
+  heightDesc:      ['height',       false],
   hash:            ['hash',         true], // intentionally only one
   lastPlayedAsc:   ['lastPlayed',   true],
   lastPlayedDesc:  ['lastPlayed',   false],

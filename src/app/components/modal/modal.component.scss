@@ -1,3 +1,5 @@
+@use "variables";
+
 h1 {
   font-size: 16px;
   margin-bottom: 20px;
@@ -9,6 +11,36 @@ span {
   margin: 10px 10px 20px;
 }
 
+.message,
+.details {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .message {
   font-style: italic;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin: 10px 10px 0;
+}
+
+.dialog-button {
+  background: variables.$gray-15;
+  border: 1px solid variables.$gray-40;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 14px;
+}
+
+.dialog-button-delete {
+  background: variables.$dark-red;
+  border-color: variables.$dark-red;
+  color: white;
 }

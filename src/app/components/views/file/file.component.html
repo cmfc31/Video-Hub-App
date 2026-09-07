@@ -22,7 +22,7 @@
 
       @if (showMeta()) {
         <div class="folder-size">
-          {{ video.fileSize | fileSizePipe }}
+          ({{ video.fileSize | fileSizePipe : true }}, {{ video.fileSizeDisplay | number }} {{ 'STATISTICS.files' | translate }})
         </div>
       }
 

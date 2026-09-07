@@ -1,5 +1,5 @@
 import { Component, Inject } from '@angular/core';
-import { MAT_DIALOG_DATA } from '@angular/material/dialog';
+import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 
 import type { DialogData } from './modal.service';
 
@@ -12,7 +12,12 @@ import type { DialogData } from './modal.service';
 export class ModalComponent {
 
   constructor(
-    @Inject(MAT_DIALOG_DATA) public data: DialogData
+    @Inject(MAT_DIALOG_DATA) public data: DialogData,
+    private dialogRef: MatDialogRef<ModalComponent, boolean>
   ) { }
+
+  close(confirmed: boolean): void {
+    this.dialogRef.close(confirmed);
+  }
 
 }

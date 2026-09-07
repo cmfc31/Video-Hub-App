@@ -71,6 +71,7 @@ export type SettingsButtonKey = 'autoFileTags'
  | 'sortOptionLastPlayed'
  | 'sortOptionFolderSize'
  | 'sortOptionFps'
+ | 'sortOptionHeight'
  | 'sortOptionModified'
  | 'sortOptionSize'
  | 'sortOptionStar'
@@ -136,6 +137,7 @@ export const SettingsButtonsGroups: SettingsButtonKey[][] = [
     'sortOptionTags',
     'sortOptionAspectRatio',
     'sortOptionFps',
+    'sortOptionHeight',
     'sortOptionFolderSize',
   ],
   [ // 3 - Find duplicates
@@ -809,6 +811,13 @@ export const SettingsButtons: SettingsButtonsType = {
     moreInfo: 'BUTTONS.sortOptionFpsMoreInfo',
     title: '',
     toggled: false
+  },
+  'sortOptionHeight': {
+    description: 'BUTTONS.sortOptionHeightDescription',
+    hidden: false,
+    moreInfo: 'BUTTONS.sortOptionHeightMoreInfo',
+    title: '',
+    toggled: true
   },
   'sortOptionModified': {
     description: 'BUTTONS.sortOptionModifiedDescription',

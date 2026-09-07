@@ -158,6 +158,16 @@
       &#x25BC; {{ 'SIDEBAR.sortFps' | translate }}
     </option>
   }
+  @if(settingsButtons['sortOptionHeight'].toggled) {
+    <option value="heightAsc">
+      &#x25B2; {{ 'SIDEBAR.sortHeight' | translate }}
+    </option>
+  }
+  @if(settingsButtons['sortOptionHeight'].toggled) {
+    <option value="heightDesc">
+      &#x25BC; {{ 'SIDEBAR.sortHeight' | translate }}
+    </option>
+  }
     <option value="random">
       {{ 'SIDEBAR.sortRandom' | translate }}
     </option>

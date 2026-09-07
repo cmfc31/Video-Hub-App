@@ -6,7 +6,19 @@
   {{ data.content }}
 </span>
 
-<span class="details">
-  {{ data?.details }}
-</span>
+@if (data.details) {
+  <span class="details">
+    {{ data.details }}
+  </span>
+}
 
+@if (data.confirm) {
+  <div class="dialog-actions">
+    <button type="button" class="dialog-button" (click)="close(false)">
+      {{ 'SYSTEM.cancel' | translate }}
+    </button>
+    <button type="button" class="dialog-button dialog-button-delete" (click)="close(true)">
+      {{ 'RIGHTCLICK.delete' | translate }}
+    </button>
+  </div>
+}

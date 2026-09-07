@@ -79,7 +79,7 @@
       {{ video.fileName }}
 
       <div class="fileSize">
-        {{ video.fileSize | fileSizePipe }} [{{ video.fileSizeDisplay }} files]
+        ({{ video.fileSize | fileSizePipe : true }}, {{ video.fileSizeDisplay | number }} {{ 'STATISTICS.files' | translate }})
       </div>
 
     </span>

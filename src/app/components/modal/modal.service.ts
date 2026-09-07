@@ -9,6 +9,7 @@ export interface DialogData {
   content: string;
   title: string;
   details?: string;
+  confirm?: boolean;
 }
 
 @Injectable()
@@ -36,6 +37,27 @@ export class ModalService {
           details: details,
           title: title,
         }
+      }
+    );
+
+    return dialogRef.afterClosed();
+  }
+
+  /**
+   * Opens a confirm / cancel dialog. Resolves `true` only when the user confirms.
+   */
+  openConfirm(title: string, content: string) {
+    const dialogRef = this.dialog.open(
+      ModalComponent,
+      {
+        data: {
+          confirm: true,
+          content: content,
+          title: title,
+        },
+        maxWidth: '420px',
+        width: '90vw',
+        panelClass: 'confirm-dialog-panel',
       }
     );
 

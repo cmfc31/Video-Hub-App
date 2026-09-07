@@ -16,6 +16,24 @@ html, body {
   box-shadow: 0 10px 20px 10px rgba(0,0,0,0.1);
 }
 
+.confirm-dialog-panel {
+  max-width: 420px !important;
+
+  .mat-mdc-dialog-container,
+  .mat-dialog-container,
+  .mdc-dialog__surface {
+    max-width: 420px;
+  }
+
+  .mdc-dialog__content,
+  .mat-mdc-dialog-content {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}
+
 // Snackbar container styles (for Angular Material v14+)
 .mat-mdc-snack-bar-container,
 .custom-snackbar {
