@@ -15,6 +15,7 @@ import { resolveSpawnableExecutablePath } from './ffmpeg-paths';
 const exec = require('child_process').exec;
 const ffprobePath = resolveSpawnableExecutablePath(require('@ffprobe-installer/ffprobe').path, 'ffprobe');
 const fs = require('fs');
+const hash = require('object-hash');
 const hasher = require('crypto').createHash;
 import type { Stats } from 'fs';
 
@@ -247,6 +248,7 @@ function stripOutTemporaryFields(imagesArray: ImageElement[]): ImageElement[] {
     delete(element.resBucket);
     delete(element.resolution);
     delete(element.selected);
+    delete(element.uuid);
   });
   return imagesArray;
 }
@@ -569,6 +571,8 @@ export function insertTemporaryFieldsSingle(element: ImageElement): ImageElement
   element.bitrate = getBitrate(element.fileSize, element.duration);
   element.resBucket = resolution.bucket;
   element.resolution = resolution.label;
+  element.uuid = hash(element);
+
   return element;
 }
 

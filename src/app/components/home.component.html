@@ -138,6 +138,8 @@
     [imgHeight]="previewHeight"
     [star]="sheetItemToDisplay.stars"
 
+    [settingsButtons]="settingsButtons"
+
     [darkMode]="settingsButtons['darkMode'].toggled"
     [hoverScrub]="settingsButtons['hoverScrub'].toggled"
     [largerFont]="settingsButtons['fontSizeLarger'].toggled"
@@ -216,11 +218,7 @@
       {{ 'SETTINGS.tabShortcuts'  | translate }}
     </button>
   </div>
-}
 
-  <!-- Modal with all settings -->
-
-@if (settingsModalOpen) {
   <div
     class="settings-modal"
     @modalAnimation
@@ -416,22 +414,30 @@
 
       <div class="filtering-total">
 
-      @if (appState.numOfFolders !== 0) {
-        {{ appState.numOfFolders | number }}
-        {{ (appState.numOfFolders === 1 ? 'SIDEBAR.totalFolders' : 'SIDEBAR.totalFoldersPlural') | translate }}
-      }
-
-        <br>
-
-      @if (!allFinishedScanning || importStage === 'importingMeta') {
+      @if (!allFinishedScanning() || importStage === 'importingMeta') {
         <div
           class="scanning-indicator"
           title="{{ 'SIDEBAR.scanInProgress' | translate }}"
           @slowFadeOut
         ></div>
       }
-        {{ (imageElementService.imageElements | deleteFilePipe : deletePipeHack).length | number }}
-        {{ 'SIDEBAR.videos' | translate }}
+
+      @if (appState.numOfFolders !== 0) {
+
+        <div class="container-icon-total">
+          <app-icon [icon]="'icon-folder-blank'"></app-icon>
+        </div>
+
+        {{ appState.numOfFolders | number }}
+
+      }
+
+        <div class="container-icon-total">
+          <app-icon [icon]="'icon-video-blank'"></app-icon>
+        </div>
+
+        {{ (imageElementService.imageElements | deleteFilePipe : deletePipeTrigger()).length | number }}
+
       </div>
 
       <!-- Regular search boxes / filters -->
@@ -450,7 +456,11 @@
       <!-- magic search -->
     @if (settingsButtons['magic'].toggled) {
       <div @filterItemAppear>
-        <app-icon class="input-icon" [icon]="settingsButtons['magic'].iconName" />
+        <app-icon
+          class="input-icon"
+          [icon]="settingsButtons['magic'].iconName"
+          title="{{ settingsButtons['magic'].moreInfo | translate }}"
+        />
         <input
           #magicSearch
           (keydown.escape)="magicSearchString = ''"
@@ -460,7 +470,7 @@
           class="filter-general input-filter"
           placeholder="{{ 'SIDEBAR.magic' | translate }}"
         >
-        <div class="filteredWords">
+        <div class="filtered-words">
         @if (magicSearchString !== '') {
           <span
             (click)="magicSearchString = ''"
@@ -477,7 +487,11 @@
     <!-- regex search -->
     @if (settingsButtons['regex'].toggled) {
       <div @filterItemAppear>
-        <app-icon class="input-icon" [icon]="settingsButtons['regex'].iconName" />
+        <app-icon
+        class="input-icon"
+        [icon]="settingsButtons['regex'].iconName"
+        title="{{ settingsButtons['regex'].moreInfo | translate }}"
+      />
         <input
           #regexSearch
           (keydown.escape)="regexSearchString = ''"
@@ -487,7 +501,7 @@
           class="filter-general input-filter"
           placeholder="{{ 'SIDEBAR.regex' | translate }}"
         >
-        <div class="filteredWords">
+        <div class="filtered-words">
         @if (regexSearchString !== '') {
           <span
             (click)="regexSearchString = ''"
@@ -506,7 +520,11 @@
       <!-- fuzzy search -->
     @if (settingsButtons['fuzzy'].toggled) {
       <div @filterItemAppear>
-        <app-icon class="input-icon" [icon]="settingsButtons['fuzzy'].iconName" />
+        <app-icon
+          class="input-icon"
+          [icon]="settingsButtons['fuzzy'].iconName"
+          title="{{ settingsButtons['fuzzy'].moreInfo | translate }}"
+        />
         <input
           #fuzzySearch
           (keydown.escape)="fuzzySearchString = ''"
@@ -516,7 +534,7 @@
           class="filter-general input-filter"
           placeholder="{{ 'SIDEBAR.fuzzy' | translate }}"
         >
-        <div class="filteredWords">
+        <div class="filtered-words">
         @if (fuzzySearchString !== '' && fuzzySearchString.length > 2) {
           <span
             (click)="fuzzySearchString = ''"
@@ -533,7 +551,11 @@
       <!-- starts-with search -->
     @if (settingsButtons['startsWith'].toggled) {
       <div @filterItemAppear>
-        <app-icon class="input-icon" [icon]="settingsButtons['startsWith'].iconName" />
+        <app-icon
+          class="input-icon"
+          [icon]="settingsButtons['startsWith'].iconName"
+          title="{{ settingsButtons['startsWith'].moreInfo | translate }}"
+        />
         <input
           #startsWithSearch
           (keydown.escape)="startsWithSearchString = ''"
@@ -543,7 +565,7 @@
           class="filter-general input-filter"
           placeholder="{{ 'SIDEBAR.startsWith' | translate }}"
         />
-        <div class="filteredWords">
+        <div class="filtered-words">
           <span
             *ngIf="startsWithSearchString !== ''"
             (click)="startsWithSearchString = ''"
@@ -676,6 +698,18 @@
       </div>
     }
 
+      <!-- Favorites only view -->
+    @if (settingsButtons['showOnlyFavorites'].toggled) {
+      <div class="lev-distance">
+        <span
+          class="search-or-tag-general search-word"
+          (click)="settingsButtons['showOnlyFavorites'].toggled = false"
+        >
+          {{ 'SIDEBAR.favoritesShowingOnly' | translate }}
+        </span>
+      </div>
+    }
+
       <!-- Duplicates -->
     @if (settingsButtons['duplicateLength'].toggled
       || settingsButtons['duplicateSize'].toggled
@@ -729,15 +763,15 @@
     }
 
       <!-- total found -->
-      <div class="filtering-total">
-        @if (numberOfVideosFound < (imageElementService.imageElements | deleteFilePipe : deletePipeHack).length) {
+      <div class="filtering-total total-found" [ngClass]="{ 'total-found-dark': settingsButtons['darkMode'].toggled }">
+        @if (numberOfVideosFound < (imageElementService.imageElements | deleteFilePipe : deletePipeTrigger()).length) {
           <span
             title="{{ 'BUTTONS.clearAllFiltersHint' | translate }}"
             class="clear-all-filters"
             (click)="clearAllFilters()"
-          >{{ numberOfVideosFound | number:'.0' }} {{ 'SIDEBAR.found' | translate }}</span>
+          ><em>{{ numberOfVideosFound | number:'.0' }}</em> {{ 'SIDEBAR.found' | translate }}</span>
         } @else {
-          <span>{{ numberOfVideosFound | number:'.0' }} {{ 'SIDEBAR.found' | translate }}</span>
+          <span><em>{{ numberOfVideosFound | number:'.0' }}</em> {{ 'SIDEBAR.found' | translate }}</span>
         }
       </div>
 
@@ -790,7 +824,9 @@
 
                 | playlistOnlyPipe : settingsButtons['showOnlyPlaylist'].toggled : playlistViewRefresh
 
-                | deleteFilePipe : deletePipeHack
+                | favoritesOnlyPipe : settingsButtons['showOnlyFavorites'].toggled
+
+                | deleteFilePipe : deletePipeTrigger()
 
                 | hideOfflinePipe : settingsButtons['hideOffline'].toggled
 
@@ -800,7 +836,7 @@
 
                 | fileSearchPipe : filters[1].array : filters[1].bool : false : 'folder' : false
 
-                | fileSearchPipe : filters[2].array : filters[2].bool : true : 'folder' : true
+                | fileSearchPipe : filters[2].array : filters[2].bool : true  : 'folder' : true
 
                 | fileSearchPipe : filters[3].array : filters[3].bool : true  : 'file'   : false
 
@@ -891,7 +927,7 @@
       <!-- ==================================== THUMBNAILS ==================================== -->
 
     @if (appState.currentView === 'showThumbnails') {
-      @for (item of scroll.viewPortItems; track item) {
+      @for (item of scroll.viewPortItems; track item.uuid) {
         <app-thumbnail
           (videoClick)=" (item.cleanName === '*FOLDER*') ? handleFolderIconClicked(item.partialPath) : handleClick($event, item)"
           (rightClick)=" (item.cleanName === '*FOLDER*') ? doNothing()                               : rightMouseClicked($event.mouseEvent, $event.item)"
@@ -900,6 +936,8 @@
           (drop)="isManualSortActive() ? onReorderDrop($event, item) : droppedSomethingOverVideo($event, item)"
           (dragover)="onReorderDragOver($event, item)"
           (dragend)="onReorderDragEnd()"
+
+          (refreshPlaylist)="refreshPlaylistIfShowing()"
 
           [draggable]="isManualSortActive() || settingsButtons['dragVideoOutOfApp'].toggled"
           (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
@@ -942,7 +980,7 @@
     <!-- ==================================== FILMSTRIP ==================================== -->
 
     @if (appState.currentView === 'showFilmstrip') {
-      @for (item of scroll.viewPortItems; track item) {
+      @for (item of scroll.viewPortItems; track item.uuid) {
         <app-filmstrip-item
           (videoClick)="handleClick($event, item)"
           (rightClick)="(item.cleanName === '*FOLDER*') ? doNothing() : rightMouseClicked($event.mouseEvent, $event.item)"
@@ -986,7 +1024,7 @@
       <!-- ==================================== FULL VIEW ==================================== -->
 
     @if (appState.currentView === 'showFullView') {
-      @for (item of scroll.viewPortItems; track item) {
+      @for (item of scroll.viewPortItems; track item.uuid) {
         <app-full-item
           (videoClick)="handleClick($event, item)"
           (rightClick)="rightMouseClicked($event.mouseEvent, $event.item)"
@@ -1023,7 +1061,7 @@
       <!-- ==================================== FILES / TEXT ==================================== -->
 
     @if (appState.currentView === 'showFiles') {
-      @for (item of scroll.viewPortItems; track item) {
+      @for (item of scroll.viewPortItems; track item.uuid) {
         <app-file-item
           (click)="      (item.cleanName === '*FOLDER*') ? handleFolderIconClicked(item.partialPath) : handleClick({ mouseEvent: $event }, item)"
           (dblclick)="   (item.cleanName === '*FOLDER*') ? handleFolderIconClicked(item.partialPath) : handleClick({ mouseEvent: $event }, item, true)"
@@ -1054,44 +1092,47 @@
       <!-- ==================================== DETAILS / META ==================================== -->
 
     @if (appState.currentView === 'showDetails' || appState.currentView === 'showDetails2') {
-      @for (item of scroll.viewPortItems; track item) {
+      @for (item of scroll.viewPortItems; track item.uuid) {
         <app-details-item
           (videoClick)="handleClick($event, item)"
           (rightClick)="rightMouseClicked($event.mouseEvent, $event.item)"
           (filterTag)="handleTagWordClicked($event.tag.name, $event.event)"
+          (sheetClick)="this.openThumbnailSheet(item)"
 
           (drop)="isManualSortActive() ? onReorderDrop($event, item) : droppedSomethingOverVideo($event, item)"
           (dragover)="onReorderDragOver($event, item)"
           (dragend)="onReorderDragEnd()"
+
+          (refreshPlaylist)="refreshPlaylistIfShowing()"
 
           [draggable]="isManualSortActive() || settingsButtons['dragVideoOutOfApp'].toggled"
           (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
 
           [video]="item"
 
-          [showTwoColumns]="appState.currentView === 'showDetails2'"
+          [settingsButtons]="settingsButtons"
 
-          [maxWidth]="galleryWidth - 40"
-
+          [connected]="sourceFolderService.sourceFolderConnected[item.inputSource]"
+          [darkMode]="settingsButtons['darkMode'].toggled"
           [elHeight]="previewHeight"
           [elWidth]="previewWidth"
           [folderPath]="appState.selectedOutputFolder"
+          [hoverScrub]="settingsButtons['hoverScrub'].toggled"
           [hubName]="appState.hubName"
           [imgHeight]="previewHeight"
-          [selectedSourceFolder]="sourceFolderService.selectedSourceFolder[item.inputSource]?.path"
-
-          [star]="item.stars"
-
-          [darkMode]="settingsButtons['darkMode'].toggled"
-          [hoverScrub]="settingsButtons['hoverScrub'].toggled"
           [largerFont]="settingsButtons['fontSizeLarger'].toggled"
+          [maxWidth]="galleryWidth - 40"
           [returnToFirstScreenshot]="settingsButtons['returnToFirstScreenshot'].toggled"
+          [selectedSourceFolder]="sourceFolderService.selectedSourceFolder[item.inputSource]?.path"
           [showAutoFileTags]="settingsButtons['autoFileTags'].toggled"
           [showAutoFolderTags]="settingsButtons['autoFolderTags'].toggled"
+          [showFavorites]="settingsButtons['favorites'].toggled"
           [showManualTags]="settingsButtons['manualTags'].toggled"
           [showMeta]="settingsButtons['showMoreInfo'].toggled"
+          [showTwoColumns]="appState.currentView === 'showDetails2'"
           [showVideoNotes]="settingsButtons['showVideoNotes'].toggled"
-          [showFavorites]="settingsButtons['favorites'].toggled"
+          [star]="item.stars"
+          [thumbAutoAdvance]="settingsButtons['thumbAutoAdvance'].toggled"
 
           [renameResponse]="renameFileResponseBehaviorSubject"
 
@@ -1107,7 +1148,7 @@
       <!-- ==================================== CLIPS ==================================== -->
 
     @if (appState.currentView === 'showClips') {
-      @for (item of scroll.viewPortItems; track item) {
+      @for (item of scroll.viewPortItems; track item.uuid) {
         <app-clip-item
           (videoClick)="(item.cleanName === '*FOLDER*') ? handleFolderIconClicked(item.partialPath) : handleClick($event, item)"
           (rightClick)="(item.cleanName === '*FOLDER*') ? doNothing()                               : rightMouseClicked($event.mouseEvent, $event.item)"
@@ -1171,7 +1212,10 @@
 
 </div> <!-- end of window -->
 
-<!-- BOTTOM TRAY SECTION -->
+<!-- ===========    Bottom Tray Section    =========== -->
+
+<!-- -----------       five tabs     ----------------- -->
+
 <div
   class="all-settings-tabs bottom-tray-tabs"
   [ngClass]="{
@@ -1229,7 +1273,9 @@
 }
 </div>
 
-  <!-- ===========    Bottom Tray Section - region below tabs   =========== -->
+<!-- -----------       bottom tray contents     ----------------- -->
+
+<!-- bottom tray container & close button -->
 
 @if (settingsButtons['showDetailsTray'].toggled
   || settingsButtons['showFreq'].toggled
@@ -1244,17 +1290,22 @@
   <div
     (click)="toggleAllTrayViewsButtonsOff()"
     class="close-bottom-tray"
+    [ngClass]="{ 'close-bottom-tray-dark': settingsButtons['darkMode'].toggled }"
     title="{{ 'SETTINGS.closeBottomTray' | translate }}"
   >
     <app-icon class="close-modal-icon" [icon]="'icon-close'" />
   </div>
-  <!-- MOST SIMILAR & RECENTLY PLAYED -->
+
+<!-- SIMILAR & RECENT -- similar to last clicked, and list of recently played -->
 @if (settingsButtons['showRelatedVideosTray'].toggled
   || settingsButtons['showRecentlyPlayed'].toggled) {
   <app-similar-tray
     (handleClick)="handleClick($event.expectedEvent, $event.item)"
+    (openDetailsView)="this.openThumbnailSheet($event)"
     (rightMouseClicked)="rightMouseClicked($event.mouseEvent, $event.item)"
     (showMoreRecentlyPlayed)="sortByRecentlyPlayed()"
+    (refreshPlaylist)="refreshPlaylistIfShowing()"
+
     [appState]="appState"
     [currentClickedItemName]="currentClickedItemName"
     [previewHeightRelated]="previewHeightRelated"
@@ -1263,42 +1314,43 @@
     [showRecentNotSimilar]="settingsButtons['showRecentlyPlayed'].toggled"
    />
 }
-  <!-- TAGS -->
+
+<!-- TAGS -->
 @if (settingsButtons['showTagTray'].toggled) {
   <app-tag-tray
     (handleTagWordClicked)="handleTagWordClicked($event.tag.name, $event.event)"
     (selectAll)="selectAllVisible()"
+    (selectNone)="unselectAllTags()"
     (toggleBatchTaggingMode)="toggleBatchTaggingMode()"
     [appState]="appState"
     [batchTaggingMode]="batchTaggingMode"
     [darkMode]="settingsButtons['darkMode'].toggled"
-    [settingsButtons]="settingsButtons"
+    [updateTotalSelectedTrigger]="tagBatchModeSelectionChangedTrigger"
    />
 }
-  <!-- WORD CLOUD -->
+
+<!-- WORD CLOUD -->
 @if (settingsButtons['showFreq'].toggled) {
-  <div
-    class="cloud-frequency"
-  >
+  <div class="cloud-frequency">
     <div class="word-cloud-buttons">
       <app-button (toggleButton)="toggleButton($any($event))" [button]="'manualTags'"     [settingsButtons]="settingsButtons" />
       <app-button (toggleButton)="toggleButton($any($event))" [button]="'autoFileTags'"   [settingsButtons]="settingsButtons" />
       <app-button (toggleButton)="toggleButton($any($event))" [button]="'autoFolderTags'" [settingsButtons]="settingsButtons" />
+      <app-button (toggleButton)="toggleButton($any($event))" [button]="'sortAutoTags'"   [settingsButtons]="settingsButtons" />
     </div>
+
   @if (settingsButtons['manualTags'].toggled
     || settingsButtons['autoFileTags'].toggled
     || settingsButtons['autoFolderTags'].toggled) {
-    <div
-      class="word-cloud-tags"
-    >
-    @for (word of wordFreqArr; track word) {
+    <div class="word-cloud-tags">
+    @for (word of (wordFreqArr | wordCloudSortPipe : settingsButtons['sortAutoTags'].toggled); track $index) {
       <span
         [ngStyle]="{'font-size': word.height + 'px' }"
         (click)="handleTagWordClicked(word.word, $event)"
       >
         {{ word.word }}
       </span>
-  }
+    }
     </div>
   } @else {
       <span class="please-select-tag" @modalAnimation>
@@ -1307,13 +1359,15 @@
   }
   </div>
 }
-  <!-- CURRENT (last-clicked) FILE -->
+
+<!-- DETAILS -- for the last-clicked file -->
 @if (settingsButtons['showDetailsTray'].toggled) {
   <div
     class="current-clicked"
     >
     @if (currentClickedItem) {
       <app-thumbnail
+        (rightClick)="rightMouseClicked($event.mouseEvent, $event.item)"
         (videoClick)="handleClick($event, currentClickedItem)"
         (sheetClick)="this.openThumbnailSheet(currentClickedItem)"
 
@@ -1341,10 +1395,13 @@
 
         [video]="currentClickedItem"
 
+        [settingsButtons]="settingsButtons"
+
         [imgHeight]="144"
         [maxWidth]="galleryWidth - 80"
         [star]="currentClickedItem.stars"
 
+        [focusOnAddTag]="true"
         [darkMode]="settingsButtons['darkMode'].toggled"
         [largerFont]="settingsButtons['fontSizeLarger'].toggled"
         [showAutoFileTags]="settingsButtons['autoFileTags'].toggled"
@@ -1363,8 +1420,9 @@
     }
   </div>
 }
+
 </div>
-}   <!-- end of bottom tray section (just below all the tabs)    =========== -->
+}   <!-- end of bottom tray section (just below all the tabs) -->
 
 <!-- WIZARD -->
 @if (wizard.showWizard) {

@@ -77,9 +77,11 @@ export class ModalService {
    * @param panelClass -- styling variant; defaults to the red 'custom-snackbar'
    *                      pass 'success-snackbar' for the green success variant
    */
-  openSnackbar(message: string, panelClass: string = 'custom-snackbar') {
+  openSnackbar(message: string, panelClassOrDuration: string | number = 'custom-snackbar', duration = 1500) {
+    const panelClass = typeof panelClassOrDuration === 'string' ? panelClassOrDuration : 'custom-snackbar';
+    const snackDuration = typeof panelClassOrDuration === 'number' ? panelClassOrDuration : duration;
     this.snack.open(message, '', {
-      duration: 1500,
+      duration: snackDuration,
       panelClass: [panelClass]
     });
   }

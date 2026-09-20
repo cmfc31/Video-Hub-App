@@ -1,6 +1,5 @@
-import type { OnChanges, OnInit, ElementRef, SimpleChanges } from '@angular/core';
-import { Component, input, output, viewChild } from '@angular/core';
-import { DomSanitizer } from '@angular/platform-browser';
+import type { OnChanges, OnInit, SimpleChanges } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 
 import * as path from 'path';
 import type { BehaviorSubject } from 'rxjs';
@@ -35,32 +34,31 @@ export interface DefaultScreenEmission {
 })
 export class SheetComponent implements OnInit, OnChanges {
 
-  readonly filmstripHolder = viewChild<ElementRef>('filmstripHolder');
-  readonly thumbHolder = viewChild<ElementRef>('thumbHolder');
-
   readonly filterTag = output<TagEmit>();
   readonly openVideoAtTime = output<object>();
 
-  readonly video = input<ImageElement>(undefined);
+  readonly video = input<ImageElement>();
 
-  readonly darkMode = input<boolean>(undefined);
-  readonly elHeight = input<number>(undefined);
-  readonly elWidth = input<number>(undefined);
-  readonly folderPath = input<string>(undefined);
-  readonly hoverScrub = input<boolean>(undefined);
-  readonly hubName = input<string>(undefined);
-  readonly imgHeight = input<number>(undefined);
-  readonly largerFont = input<boolean>(undefined);
-  readonly returnToFirstScreenshot = input<boolean>(undefined);
-  readonly selectedSourceFolder = input<string>(undefined);
-  readonly showAutoFileTags = input<boolean>(undefined);
-  readonly showAutoFolderTags = input<boolean>(undefined);
-  readonly showManualTags = input<boolean>(undefined);
-  readonly showMeta = input<boolean>(undefined);
-  readonly showVideoNotes = input<boolean>(undefined);
-  readonly star = input<StarRating>(undefined);
+  readonly settingsButtons = input<any>();
 
-  readonly renameResponse = input<BehaviorSubject<RenameFileResponse>>(undefined);
+  readonly darkMode = input<boolean>();
+  readonly elHeight = input<number>();
+  readonly elWidth = input<number>();
+  readonly folderPath = input<string>();
+  readonly hoverScrub = input<boolean>();
+  readonly hubName = input<string>();
+  readonly imgHeight = input<number>();
+  readonly largerFont = input<boolean>();
+  readonly returnToFirstScreenshot = input<boolean>();
+  readonly selectedSourceFolder = input<string>();
+  readonly showAutoFileTags = input<boolean>();
+  readonly showAutoFolderTags = input<boolean>();
+  readonly showManualTags = input<boolean>();
+  readonly showMeta = input<boolean>();
+  readonly showVideoNotes = input<boolean>();
+  readonly star = input<StarRating>();
+
+  readonly renameResponse = input<BehaviorSubject<RenameFileResponse>>();
 
   pathToFilmstripJpg: string;
   pathToVideoFile: string;
@@ -68,11 +66,12 @@ export class SheetComponent implements OnInit, OnChanges {
   starRatingHack: StarRating;
   thumbnailsToDisplay = 4;
 
+  arrayHack: number[] = [];
+
   constructor(
     public filePathService: FilePathService,
     public imageElementService: ImageElementService,
-    public manualTagsService: ManualTagsService,
-    public sanitizer: DomSanitizer,
+    public manualTagsService: ManualTagsService
   ) { }
 
   ngOnChanges(changes: SimpleChanges) {
@@ -87,9 +86,10 @@ export class SheetComponent implements OnInit, OnChanges {
 
   refreshMediaPaths() {
     const video = this.video();
+    this.arrayHack = Array.from({ length: video.screens }, (_, index) => index);
     this.pathToFilmstripJpg = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', video.hash);
     this.pathToVideoFile = path.join(this.selectedSourceFolder(), video.partialPath, video.fileName);
-    this.percentOffset = (100 / (video.screens - 1));
+    this.percentOffset = (100 / video.screens);
     this.starRatingHack = this.star();
   }
 
@@ -152,7 +152,7 @@ export class SheetComponent implements OnInit, OnChanges {
   /**
    * Set ImageElement defaultScreen property
    */
-  setDefaultScreenshot(event: any, index: number): void {
+  setDefaultScreenshot(event: PointerEvent, index: number): void {
     event.stopPropagation();
 
     this.imageElementService.HandleEmission({
