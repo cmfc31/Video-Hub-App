@@ -235,6 +235,7 @@
     "errorMustBeDifferent": "يجب أن يكون اسم الملف الجديد مختلفًا",
     "errorMustNotBeEmpty": "اسم الملف الجديد قد لا يكون فارغا",
     "errorSomeError": "حدث خطأ ما",
+    "moveToTop": "نقل إلى الأعلى",
     "openFolder": "افتح المجلد",
     "renameButton": "إعادة تسمية",
     "renameFile": "إعادة تسمية الملف",

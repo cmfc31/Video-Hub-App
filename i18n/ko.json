@@ -235,6 +235,7 @@
     "errorMustBeDifferent": "새 파일 이름은 달라야 함",
     "errorMustNotBeEmpty": "새 파일 이름은 공백으로 할 수 없음",
     "errorSomeError": "오류",
+    "moveToTop": "맨 위로 이동",
     "openFolder": "폴더 열기",
     "renameButton": "이름 바꾸기",
     "renameFile": "파일 이름 바꾸기",

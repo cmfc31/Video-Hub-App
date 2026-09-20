@@ -236,6 +236,7 @@
     "errorMustBeDifferent": "新文件名必须不相同",
     "errorMustNotBeEmpty": "新文件名不能为空",
     "errorSomeError": "发生一些错误",
+    "moveToTop": "移到顶部",
     "openFolder": "打开文件夹",
     "renameButton": "改名",
     "renameFile": "重命名文件",

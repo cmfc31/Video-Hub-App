@@ -235,6 +235,7 @@
     "errorMustBeDifferent": "tên tệp mới phải khác",
     "errorMustNotBeEmpty": "tên tệp mới không được để trống",
     "errorSomeError": "Đã xảy ra một số lỗi",
+    "moveToTop": "Chuyển lên đầu",
     "openFolder": "Mở thư mục",
     "renameButton": "ĐỔI TÊN",
     "renameFile": "Đổi tên tệp",

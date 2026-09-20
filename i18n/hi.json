@@ -236,6 +236,7 @@
     "errorMustBeDifferent": "नया फ़ाइल नाम अलग होना चाहिए",
     "errorMustNotBeEmpty": "नया फ़ाइल नाम खाली नहीं हो सकता है",
     "errorSomeError": "कुछ त्रुटि हुई",
+    "moveToTop": "शीर्ष पर ले जाएँ",
     "openFolder": "फोल्डर खोलो",
     "renameButton": "नाम बदलें",
     "renameFile": "फाइल का नाम बदलो",

@@ -44,6 +44,38 @@ export function computeReorderMtimes(
 }
 
 /**
+ * Pick a second-precision mtime that makes `item` strictly the newest among all videos.
+ * Returns null if it is already uniquely most recent.
+ */
+export function computeMoveToTopMtime(
+  item: ImageElement,
+  allVideos: ImageElement[]
+): number | null {
+  let othersMax = Number.NEGATIVE_INFINITY;
+
+  for (const video of allVideos) {
+    if (
+      video.hash === item.hash
+      || video.deleted
+      || video.cleanName === '*FOLDER*'
+    ) {
+      continue;
+    }
+
+    if (typeof video.mtime === 'number' && video.mtime > othersMax) {
+      othersMax = video.mtime;
+    }
+  }
+
+  if (item.mtime > othersMax) {
+    return null;
+  }
+
+  const nowSec = Math.floor(Date.now() / SECOND_MS) * SECOND_MS;
+  return Math.max(nowSec, Math.floor(othersMax / SECOND_MS) * SECOND_MS + SECOND_MS);
+}
+
+/**
  * Prefer updating only the moved item when a whole-second gap exists between neighbors.
  */
 function trySingleItemMtime(

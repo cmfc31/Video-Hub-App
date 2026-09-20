@@ -235,6 +235,7 @@
     "errorMustBeDifferent": "新しいファイル名は現在の名前と異なる必要があります。",
     "errorMustNotBeEmpty": "新しいファイル名を入力してください。",
     "errorSomeError": "エラーが発生しました",
+    "moveToTop": "一番上に移動",
     "openFolder": "エクスプローラーで表示",
     "renameButton": "変更",
     "renameFile": "ファイル名を変更",

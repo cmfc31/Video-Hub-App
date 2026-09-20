@@ -246,6 +246,7 @@
     "errorMustBeDifferent": "new file name must be different",
     "errorMustNotBeEmpty": "new file name may not be empty",
     "errorSomeError": "Some error occurred",
+    "moveToTop": "Move to top",
     "openFolder": "Open folder",
     "playlistAdd": "Add to playlist",
     "playlistRemove": "Remove from playlist",

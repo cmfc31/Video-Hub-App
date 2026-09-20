@@ -235,6 +235,7 @@
     "errorMustBeDifferent": "Der neue Dateiname muss unterschiedlich sein",
     "errorMustNotBeEmpty": "neuer Dateiname darf nicht leer sein",
     "errorSomeError": "Ein Fehler ist aufgetreten",
+    "moveToTop": "Nach oben verschieben",
     "openFolder": "Ordner öffnen",
     "renameButton": "UMBENENNEN",
     "renameFile": "Datei umbenennen",

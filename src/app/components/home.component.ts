@@ -47,7 +47,7 @@ import {
   AllSupportedBottomTrayViews,
   AllSupportedViews
 } from '../../../interfaces/shared-interfaces';
-import { computeReorderMtimes } from '../common/reorder-mtime';
+import { computeMoveToTopMtime, computeReorderMtimes } from '../common/reorder-mtime';
 import type { MtimeUpdate } from '../common/reorder-mtime';
 
 // Constants, etc
@@ -1198,6 +1198,34 @@ export class HomeComponent implements OnInit, AfterViewInit {
     }
 
     const updates = computeReorderMtimes(gallery, fromIndex, toIndex);
+    this.sendMtimeUpdates(updates);
+  }
+
+  /**
+   * Right-click "Move to top": stamp this video as the newest by Date modified
+   */
+  moveVideoToTop(): void {
+    if (!this.isManualSortActive() || !this.currentRightClickedItem) {
+      return;
+    }
+
+    const item = this.currentRightClickedItem;
+    if (item.cleanName === '*FOLDER*') {
+      return;
+    }
+
+    const mtimeMs = computeMoveToTopMtime(item, this.imageElementService.imageElements);
+    if (mtimeMs == null) {
+      return;
+    }
+
+    this.sendMtimeUpdates([{ element: item, mtimeMs }]);
+  }
+
+  /**
+   * Persist mtime updates on disk, then wait for Node to confirm before updating the hub
+   */
+  private sendMtimeUpdates(updates: MtimeUpdate[]): void {
     if (!updates.length) {
       return;
     }
@@ -2484,8 +2512,9 @@ export class HomeComponent implements OnInit, AfterViewInit {
     const clientY: number = event.clientY;
     const howFarFromBottom: number = winHeight - clientY;
 
+    const menuHeight = this.isManualSortActive() ? 240 : 210;
     this.rightClickPosition.x = (howFarFromRight < 150) ? clientX - 150 + (howFarFromRight) : clientX;
-    this.rightClickPosition.y = (howFarFromBottom < 210) ? clientY - 210 + (howFarFromBottom) : clientY;
+    this.rightClickPosition.y = (howFarFromBottom < menuHeight) ? clientY - menuHeight + (howFarFromBottom) : clientY;
 
     this.rightClickShowing = true;
   }

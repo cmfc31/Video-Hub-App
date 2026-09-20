@@ -235,6 +235,7 @@
     "errorMustBeDifferent": "ім'я нового файлу повинно бути іншим",
     "errorMustNotBeEmpty": "нове ім’я файлу може бути не порожнім",
     "errorSomeError": "Виникла помилка",
+    "moveToTop": "Перемістити вгору",
     "openFolder": "Відкрити папку",
     "renameButton": "ОЗНАЧИТИ",
     "renameFile": "Перейменуйте файл",

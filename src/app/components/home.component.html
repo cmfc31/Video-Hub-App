@@ -92,6 +92,13 @@
         {{ currentRightClickedItem.playlist
             ? ('RIGHTCLICK.playlistRemove' | translate)
             : ('RIGHTCLICK.playlistAdd'    | translate) }}</li>
+      @if (isManualSortActive()) {
+        <li
+          (click)="moveVideoToTop()"
+          [ngClass]="{ 'right-click-disabled': !sourceFolderService.sourceFolderConnected[currentRightClickedItem.inputSource] }"
+        >
+                                                                {{ 'RIGHTCLICK.moveToTop'   | translate }}</li>
+      }
 
       <li
         (click)="renamingNow = true"

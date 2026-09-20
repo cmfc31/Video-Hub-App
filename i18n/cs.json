@@ -236,6 +236,7 @@
     "errorMustBeDifferent": "název nového souboru musí být jiný",
     "errorMustNotBeEmpty": "nový název souboru nesmí být prázdný",
     "errorSomeError": "Došlo k nějaké chybě",
+    "moveToTop": "Přesunout nahoru",
     "openFolder": "Otevřít složku",
     "renameButton": "PŘEJMENOVAT",
     "renameFile": "Přejmenovat soubor",

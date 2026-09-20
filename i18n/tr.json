@@ -235,6 +235,7 @@
     "errorMustBeDifferent": "yeni dosya adı farklı olmalıdır",
     "errorMustNotBeEmpty": "yeni dosya adı boş olamaz",
     "errorSomeError": "Bir hata oluştu",
+    "moveToTop": "En üste taşı",
     "openFolder": "Klasörü aç",
     "renameButton": "YENİDEN ADLANDIR",
     "renameFile": "Dosyayı yeniden adlandır",

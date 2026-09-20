@@ -236,6 +236,7 @@
     "errorMustBeDifferent": "De nieuwe bestandsnaam moet anders zijn",
     "errorMustNotBeEmpty": "Een nieuwe bestandsnaam mag niet leeg zijn",
     "errorSomeError": "Er is een fout opgetreden",
+    "moveToTop": "Naar boven verplaatsen",
     "openFolder": "Open map",
     "renameButton": "HERNOEM",
     "renameFile": "Hernoem bestand",

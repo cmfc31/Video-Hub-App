@@ -236,6 +236,7 @@
     "errorMustBeDifferent": "nowa nazwa pliku musi się różnić",
     "errorMustNotBeEmpty": "pole nazwy pliku nie może być puste",
     "errorSomeError": "Wystąpił błąd",
+    "moveToTop": "Przenieś na górę",
     "openFolder": "Otwórz folder",
     "renameButton": "ZMIEŃ NAZWĘ",
     "renameFile": "Zmień nazwę pliku",

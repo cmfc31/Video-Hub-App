@@ -236,6 +236,7 @@
     "errorMustBeDifferent": "o novo nome do arquivo deve ser diferente",
     "errorMustNotBeEmpty": "o novo nome do arquivo pode não estar vazio",
     "errorSomeError": "Ocorreu algum erro",
+    "moveToTop": "Mover para o topo",
     "openFolder": "Pasta aberta",
     "renameButton": "RENAME",
     "renameFile": "Renomear arquivo",

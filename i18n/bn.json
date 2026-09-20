@@ -235,6 +235,7 @@
     "errorMustBeDifferent": "নতুন ফাইলের নাম অবশ্যই আলাদা হতে হবে",
     "errorMustNotBeEmpty": "নতুন ফাইলের নাম খালি থাকতে পারে না",
     "errorSomeError": "কিছু ত্রুটি ঘটেছে",
+    "moveToTop": "উপরে সরান",
     "openFolder": "ফোল্ডার খোলা",
     "renameButton": "পুনরায় নামকরণ করুন",
     "renameFile": "ফাইলটির নাম পরিবর্তন করুন",
