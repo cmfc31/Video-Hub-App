@@ -21,7 +21,7 @@
       <span class="time">{{ video().durationDisplay }}</span>
       <span class="rez">{{ video().fileSizeDisplay }}
         @if (video().resolution) {
-          <span class="time rez-new">{{ video().resolution }}</span>
+          <span class="time rez-new" [attr.data-res]="video().resolution">{{ video().resolution }}</span>
         }
       </span>
     }

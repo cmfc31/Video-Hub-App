@@ -2,32 +2,49 @@
 
 .time, .rez {
   background: variables.$gray-20;
-  border-radius: 4px;
-  bottom: 2px;
+  border-radius: 5px;
+  bottom: 3px;
   color: black;
   font-family: monospace;
-  font-size: 9px;
-  padding: 1px 3px 1px 3px;
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 2px 5px;
   position: absolute;
   z-index: 2;
 }
 
 .time {
-  right: 2px;
+  right: 3px;
 }
 
 .rez {
-  left: 2px;
+  left: 3px;
 }
 
+// Resolution pill sits just right of the file-size badge; solid colors keep it legible on any thumbnail
 .rez-new {
-  background: none;
-  border: none;
+  background: rgba(0, 0, 0, 0.8);
+  bottom: 0;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
   color: white;
+  font-weight: bold;
   left: 100%;
-  transform: translate(0, 2px);
-  opacity: 0.6;
+  margin-left: 4px;
   right: unset;
+  white-space: nowrap;
+
+  &[data-res^="4K"] {
+    background: #f5b301;
+    color: black;
+  }
+
+  &[data-res^="1080"] {
+    background: #1f6fd6;
+  }
+
+  &[data-res^="720"] {
+    background: #23894c;
+  }
 }
 
 .dark-style {
