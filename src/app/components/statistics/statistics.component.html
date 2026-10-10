@@ -397,6 +397,108 @@
       </div>
     </div>
 
+    @if (imageConversionProgress(); as progress) {
+      <div class="conversion-status">
+
+        <div
+          class="conversion-status-line"
+          [ngClass]="{
+              'conversion-status-retrying': progress.state === 'running' && progress.retrying > 0,
+              'conversion-status-finished': progress.state === 'finished' && progress.failed === 0,
+              'conversion-status-failed': progress.state === 'finished' && progress.failed > 0,
+              'conversion-status-cancelled': progress.state === 'cancelled'
+            }"
+        >
+          @switch (progress.state) {
+            @case ('running') {
+              @if (conversionOnlyRetriesLeft(progress)) {
+                {{ 'STATISTICS.conversionRetryingNow' | translate: { count: progress.retrying } }}
+              } @else {
+                {{ 'STATISTICS.conversionRunning' | translate: { format: (progress.format | uppercase) } }}
+              }
+            }
+            @case ('finished') {
+              {{ 'STATISTICS.conversionFinished' | translate: { format: (progress.format | uppercase), time: formatDuration(progress.elapsedMs) } }}
+            }
+            @case ('cancelled') {
+              {{ 'STATISTICS.conversionCancelled' | translate }}
+            }
+          }
+        </div>
+
+        <div class="conversion-bar">
+          <div
+            class="conversion-bar-fill"
+            [ngClass]="{
+                'conversion-bar-retrying': progress.state === 'running' && progress.retrying > 0,
+                'conversion-bar-done': progress.state === 'finished',
+                'conversion-bar-cancelled': progress.state === 'cancelled'
+              }"
+            [style.width.%]="conversionPercent(progress)"
+          ></div>
+        </div>
+
+        <div class="conversion-numbers">
+          <span>
+            {{ 'STATISTICS.conversionImagesDone' | translate: { done: (progress.done | number:'.0'), total: (progress.total | number:'.0') } }}
+            ({{ conversionPercent(progress) }}%)
+          </span>
+          @if (progress.state === 'running' && conversionTimeLeft(progress)) {
+            <span>{{ 'STATISTICS.conversionTimeLeft' | translate: { time: conversionTimeLeft(progress) } }}</span>
+          }
+        </div>
+
+        <div class="missing-assets-stats-grid conversion-counts">
+          <div class="missing-assets-stat-row">
+            <span>{{ 'STATISTICS.conversionConverted' | translate }}</span>
+            <span class="missing-assets-stat-value">{{ progress.converted | number:'.0' }}</span>
+          </div>
+          <div class="missing-assets-stat-row" [ngClass]="{ 'conversion-count-bad': progress.failed > 0 }">
+            <span>{{ 'STATISTICS.conversionFailed' | translate }}</span>
+            <span class="missing-assets-stat-value">{{ progress.failed | number:'.0' }}</span>
+          </div>
+          <div class="missing-assets-stat-row" [ngClass]="{ 'conversion-count-warn': progress.retrying > 0 }">
+            <span>{{ 'STATISTICS.conversionRetrying' | translate }}</span>
+            <span class="missing-assets-stat-value">{{ progress.retrying | number:'.0' }}</span>
+          </div>
+          <div class="missing-assets-stat-row">
+            <span>{{ 'STATISTICS.conversionMissing' | translate }}</span>
+            <span class="missing-assets-stat-value">{{ progress.missing | number:'.0' }}</span>
+          </div>
+        </div>
+
+        @if (progress.state === 'running' && progress.retrying > 0 && !conversionOnlyRetriesLeft(progress)) {
+          <p class="conversion-note">{{ 'STATISTICS.conversionRetryLater' | translate: { count: progress.retrying } }}</p>
+        }
+
+        @if (imageConversionFailures().length > 0) {
+          <div class="conversion-failures">
+            <div class="conversion-failures-title">{{ 'STATISTICS.conversionFailedImages' | translate }}</div>
+            <ul>
+              @for (failure of listedConversionFailures(); track $index) {
+                <li [title]="failure.fileName">
+                  <span class="conversion-failure-kind">
+                    @switch (failure.folder) {
+                      @case ('thumbnails') { {{ 'STATISTICS.conversionKindThumbnail' | translate }} }
+                      @case ('filmstrips') { {{ 'STATISTICS.conversionKindFilmstrip' | translate }} }
+                      @case ('clips') { {{ 'STATISTICS.conversionKindClipPoster' | translate }} }
+                    }
+                  </span>
+                  {{ failure.fileName }}
+                </li>
+              }
+            </ul>
+            @if (unlistedConversionFailures() > 0) {
+              <div class="conversion-failures-more">
+                {{ 'STATISTICS.conversionAndMore' | translate: { count: unlistedConversionFailures() } }}
+              </div>
+            }
+            <p class="conversion-note">{{ 'STATISTICS.conversionFailedHint' | translate }}</p>
+          </div>
+        }
+      </div>
+    }
+
     <div class="missing-assets-actions">
       <select
         #convertFormatSelect
@@ -416,9 +518,14 @@
         {{ 'STATISTICS.convertImages' | translate }}
       </button>
 
-      <span *ngIf="importStage() === 'convertingImages'" class="missing-assets-loading">
-        {{ 'STATISTICS.convertingImages' | translate }}
-      </span>
+      @if (importStage() === 'convertingImages') {
+        <button
+          class="wizard-button"
+          (click)="cancelImageConversion.emit()"
+        >
+          {{ 'STATISTICS.cancelConversion' | translate }}
+        </button>
+      }
     </div>
   </div>
 

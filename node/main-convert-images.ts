@@ -39,6 +39,29 @@ export interface ImageConversionResult {
   missing: number;     // images that were already missing from disk before the conversion
 }
 
+export interface ImageConversionFailure {
+  folder: ImageAssetFolder;
+  hash: string;
+  willRetry: boolean;  // true the first time an image fails -- it is queued again at the end
+}
+
+/**
+ * Sent to Angular (`image-conversion-progress`) when the conversion starts, after every image, and when it ends
+ */
+export interface ImageConversionProgress {
+  converted: number;
+  done: number;                         // images handled so far (converted + failed + missing)
+  elapsedMs: number;                    // time since the conversion started
+  failed: number;                       // images that failed twice -- they will show up as missing assets
+  format: ImageFormat;                  // the format being converted to
+  lastFailure?: ImageConversionFailure; // set only on the update right after an image failed
+  missing: number;                      // images that were already missing from disk
+  retrying: number;                     // images that failed once and are waiting for (or running) their retry
+  state: 'running' | 'finished' | 'cancelled';
+  total: number;
+  vhaFile: string;
+}
+
 type ConversionOutcome = 'converted' | 'failed' | 'missing';
 
 interface ConversionTask {
@@ -49,13 +72,16 @@ interface ConversionTask {
 }
 
 interface ConversionJob {
+  converted: number;
   done: number;
   failed: number;
   missing: number;
   queue: any;                       // async QueueObject
+  retrying: number;
   screenshotFolder: string;
   sourceFilesToDelete: string[];    // old-format files that now have a new-format copy
   sourceSettings: ScreenshotSettings;
+  startTime: number;
   targetSettings: ScreenshotSettings;
   total: number;
   vhaFile: string;
@@ -98,19 +124,23 @@ export function startImageConversion(elements: ImageElement[], targetFormat: Ima
     });
 
   const job: ConversionJob = {
+    converted: 0,
     done: 0,
     failed: 0,
     missing: 0,
     queue: async.queue((task: ConversionTask, done) => convertOneImage(job, task, done), CONVERSION_CONCURRENCY),
+    retrying: 0,
     screenshotFolder: screenshotFolder,
     sourceFilesToDelete: [],
     sourceSettings: sourceSettings,
+    startTime: Date.now(),
     targetSettings: { ...sourceSettings, imageFormat: normalizeImageFormat(targetFormat) },
     total: tasks.length,
     vhaFile: GLOBALS.currentlyOpenVhaFile,
   };
 
   currentJob = job;
+  sendConversionProgress(job, 'running');
 
   if (tasks.length === 0) {
     finishJob(job);
@@ -131,9 +161,11 @@ export function startImageConversion(elements: ImageElement[], targetFormat: Ima
  */
 export function cancelImageConversion(): void {
   if (currentJob) {
-    currentJob.queue.kill();
+    const job: ConversionJob = currentJob;
+    job.queue.kill();
     currentJob = undefined;
     allowSleep();
+    sendConversionProgress(job, 'cancelled');
   }
 }
 
@@ -163,15 +195,42 @@ function finishJob(job: ConversionJob): void {
   finishedJob = job;
   allowSleep();
   sendCurrentProgress(1, 1, 'done');
+  sendConversionProgress(job, 'finished');
 
   const result: ImageConversionResult = {
-    converted: job.total - job.failed - job.missing,
+    converted: job.converted,
     failed: job.failed,
     format: job.targetSettings.imageFormat,
     missing: job.missing,
   };
 
   GLOBALS.angularApp.sender.send('image-format-converted', result, job.vhaFile);
+}
+
+function sendConversionProgress(
+  job: ConversionJob,
+  state: ImageConversionProgress['state'],
+  lastFailure?: ImageConversionFailure
+): void {
+  if (!GLOBALS.angularApp) {
+    return;
+  }
+
+  const progress: ImageConversionProgress = {
+    converted: job.converted,
+    done: job.done,
+    elapsedMs: Date.now() - job.startTime,
+    failed: job.failed,
+    format: job.targetSettings.imageFormat,
+    lastFailure: lastFailure,
+    missing: job.missing,
+    retrying: job.retrying,
+    state: state,
+    total: job.total,
+    vhaFile: job.vhaFile,
+  };
+
+  GLOBALS.angularApp.sender.send('image-conversion-progress', progress);
 }
 
 /**
@@ -192,9 +251,19 @@ function convertOneImage(job: ConversionJob, task: ConversionTask, done): void {
       job.failed++;
     } else if (outcome === 'missing') {
       job.missing++;
+    } else {
+      job.converted++;
+    }
+    if (task.retried) {
+      job.retrying--;
     }
     job.done++;
     sendCurrentProgress(job.done, job.total, 'convertingImages');
+    sendConversionProgress(
+      job,
+      'running',
+      outcome === 'failed' ? { folder: task.folder, hash: task.hash, willRetry: false } : undefined
+    );
     done();
   };
 
@@ -245,7 +314,9 @@ function convertOneImage(job: ConversionJob, task: ConversionTask, done): void {
               fs.unlink(tempPath, () => {
                 if (!task.retried && currentJob === job) {
                   // retry once at the end of the queue, when fewer encodes compete for the CPU
+                  job.retrying++;
                   job.queue.push({ ...task, retried: true });
+                  sendConversionProgress(job, 'running', { folder: task.folder, hash: task.hash, willRetry: true });
                   done();
                 } else {
                   finished('failed');

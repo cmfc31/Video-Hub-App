@@ -12,6 +12,8 @@ import type { ImageElement, ScreenshotSettings, InputSources } from '../../../..
 import type { ImageFormat } from '../../../../interfaces/image-format.util';
 import { normalizeImageFormat } from '../../../../interfaces/image-format.util';
 import type { ImportStage } from '../../../../node/main-support';
+import type { ImageConversionProgress } from '../../../../node/main-convert-images';
+import type { ImageAssetFolder } from '../../../../interfaces/image-format.util';
 
 import { metaAppear, breadcrumbWordAppear } from '../../common/animations';
 
@@ -20,6 +22,14 @@ export interface ServerDetails {
   wifi: string;
   host: string;
 }
+
+export interface ImageConversionFailedItem {
+  fileName: string;           // video file name (or hash if the video is no longer in the hub)
+  folder: ImageAssetFolder;   // which image failed: thumbnail, filmstrip, or clip poster
+}
+
+// how many failed images to list by name in the conversion card
+const MAX_LISTED_CONVERSION_FAILURES = 8;
 
 export interface MissingAssetsStats {
   videosChecked: number;
@@ -46,6 +56,7 @@ export interface MissingAssetsStats {
 })
 export class StatisticsComponent implements OnInit, OnDestroy {
 
+  readonly cancelImageConversion = output<void>();
   readonly deleteInputSourceFiles = output<number>();
   readonly finalArrayNeedsSaving = output<any>();
   readonly startServerOnPort = output<number>();
@@ -53,6 +64,8 @@ export class StatisticsComponent implements OnInit, OnDestroy {
   readonly appState = input<AppStateInterface>();
   readonly avifAvailable = input<boolean>(true);
   readonly importStage = input<ImportStage>('done');
+  readonly imageConversionFailures = input<ImageConversionFailedItem[]>([]);
+  readonly imageConversionProgress = input<ImageConversionProgress>();
   readonly hubName = input<string>();
   readonly inputFolders = input<InputSources>();
   readonly numFolders = input<number>();
@@ -363,6 +376,52 @@ export class StatisticsComponent implements OnInit, OnDestroy {
       this.convertTargetFormat,
       this.imageElementService.imageElements
     );
+  }
+
+  conversionPercent(progress: ImageConversionProgress): number {
+    return progress.total === 0 ? 100 : Math.floor(100 * progress.done / progress.total);
+  }
+
+  /**
+   * True when every image was handled once and only the retries of timed-out images are left
+   */
+  conversionOnlyRetriesLeft(progress: ImageConversionProgress): boolean {
+    return progress.retrying > 0 && progress.done + progress.retrying >= progress.total;
+  }
+
+  /**
+   * Estimated time left, based on the average time per image so far -- `undefined` until there is enough data
+   */
+  conversionTimeLeft(progress: ImageConversionProgress): string {
+    if (progress.done < 10 || progress.elapsedMs < 3000) {
+      return undefined;
+    }
+    const msPerImage: number = progress.elapsedMs / progress.done;
+    return this.formatDuration(msPerImage * (progress.total - progress.done));
+  }
+
+  listedConversionFailures(): ImageConversionFailedItem[] {
+    return this.imageConversionFailures().slice(0, MAX_LISTED_CONVERSION_FAILURES);
+  }
+
+  unlistedConversionFailures(): number {
+    return Math.max(0, this.imageConversionFailures().length - MAX_LISTED_CONVERSION_FAILURES);
+  }
+
+  /**
+   * e.g. `45s`, `3m 05s`, `1h 12m`
+   */
+  formatDuration(ms: number): string {
+    const totalSeconds: number = Math.max(1, Math.round(ms / 1000));
+    const hours: number = Math.floor(totalSeconds / 3600);
+    const minutes: number = Math.floor((totalSeconds % 3600) / 60);
+    const seconds: number = totalSeconds % 60;
+    if (hours > 0) {
+      return hours + 'h ' + String(minutes).padStart(2, '0') + 'm';
+    } else if (minutes > 0) {
+      return minutes + 'm ' + String(seconds).padStart(2, '0') + 's';
+    }
+    return seconds + 's';
   }
 
   /**

@@ -32,7 +32,8 @@ import { isPartialPathUnderPrefix } from '../../../interfaces/novha.util';
 import { imageFileName, normalizeImageFormat } from '../../../interfaces/image-format.util';
 import { formatFileSize, refreshFileSizeDisplays } from '../../../interfaces/file-size.util';
 import type { ImportStage } from '../../../node/main-support';
-import type { ImageConversionResult } from '../../../node/main-convert-images';
+import type { ImageConversionProgress, ImageConversionResult } from '../../../node/main-convert-images';
+import type { ImageConversionFailedItem } from './statistics/statistics.component';
 import type { ServerDetails } from './statistics/statistics.component';
 import type { RemoteSettings, SettingsButtonSavedProperties, SettingsObject } from '../../../interfaces/settings-object.interface';
 import type { SortType } from '../pipes/sorting.pipe';
@@ -173,6 +174,10 @@ export class HomeComponent implements OnInit, AfterViewInit {
   importStage: ImportStage = 'done';
 
   avifAvailable = true; // updated by Node -- false when the bundled ffmpeg can not encode AVIF
+
+  // latest state of the image format conversion (shown in the statistics "Image format" card)
+  imageConversionProgress: ImageConversionProgress;
+  imageConversionFailures: ImageConversionFailedItem[] = [];
   progressString = '';
 
   // ========================================================================
@@ -605,6 +610,30 @@ export class HomeComponent implements OnInit, AfterViewInit {
       this.avifAvailable = available;
     });
 
+    (window as any).myElectron.receiveFromMain('image-conversion-progress', (progress: ImageConversionProgress) => {
+      this.zone.run(() => {
+        if (progress.state === 'running' && progress.done === 0 && progress.retrying === 0) {
+          this.imageConversionFailures = []; // a new conversion started
+        }
+
+        if (progress.lastFailure && !progress.lastFailure.willRetry) {
+          const element: ImageElement = this.imageElementService.imageElements
+            .find((item: ImageElement) => item.hash === progress.lastFailure.hash);
+
+          this.imageConversionFailures = [
+            ...this.imageConversionFailures,
+            { fileName: element ? element.fileName : progress.lastFailure.hash, folder: progress.lastFailure.folder },
+          ];
+        }
+
+        if (progress.state === 'cancelled') {
+          this.importStage = 'done';
+        }
+
+        this.imageConversionProgress = progress;
+      });
+    });
+
     // all images of the hub were re-encoded into a new format: save the hub pointing at the new files
     // Node then deletes the old-format images and re-opens the hub (see `commit-image-format`)
     (window as any).myElectron.receiveFromMain('image-format-converted', (result: ImageConversionResult, vhaFile: string) => {
@@ -797,6 +826,10 @@ export class HomeComponent implements OnInit, AfterViewInit {
       this.imageElementService.finalArrayNeedsSaving = false;
 
       this.currentScreenshotSettings = finalObject.screenshotSettings;
+      if (this.imageConversionProgress && this.imageConversionProgress.vhaFile !== pathToFile) {
+        this.imageConversionProgress = undefined; // only show the conversion summary for the hub it belongs to
+        this.imageConversionFailures = [];
+      }
       this.filePathService.imageFormat = normalizeImageFormat(finalObject.screenshotSettings.imageFormat);
       this.filePathService.screenshotHeight = finalObject.screenshotSettings.height;
 
@@ -1510,6 +1543,10 @@ export class HomeComponent implements OnInit, AfterViewInit {
     this.sourceFolderService.selectedSourceFolder = this.wizard.selectedSourceFolder;
     this.appState.selectedOutputFolder = this.wizard.selectedOutputFolder;
     (window as any).myElectron.sendToMain('start-the-import', this.wizard);
+  }
+
+  public cancelImageConversion(): void {
+    (window as any).myElectron.sendToMain('cancel-image-conversion');
   }
 
   public cancelCurrentImport(): void {

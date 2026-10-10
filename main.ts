@@ -504,6 +504,14 @@ ipcMain.on('convert-hub-images', (event, targetFormat: ImageFormat, finalArray: 
 });
 
 /**
+ * Stop the image conversion -- images already converted are kept and reused by the next conversion
+ */
+ipcMain.on('cancel-image-conversion', (event): void => {
+  GLOBALS.winRef.setProgressBar(-1);
+  cancelImageConversion();
+});
+
+/**
  * Save the hub with its new image format, delete the old-format images, and re-open the hub
  * so every view reloads its images with the new file extension
  */
