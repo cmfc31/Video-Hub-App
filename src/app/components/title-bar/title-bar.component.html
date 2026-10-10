@@ -17,9 +17,45 @@
       VHub 3 :: Neko's mod
       <b>{{ demo() ? ' demo - limited to 50 video files ' : '' }}</b>
       {{ importStage() !== 'done' ? ' - ' + progressString() + ' - ' : ' - ' }}
+    </span>
+    <span
+      (click)="toggleHubSwitcher($event)"
+      class="hub-switcher-button"
+      [ngClass]="{ 'hub-switcher-open': hubSwitcherOpen }"
+      [title]="'WIZARD.openPrevious' | translate"
+    >
       {{ appState().hubName }}
     </span>
   </div>
+
+  @if (hubSwitcherOpen) {
+    <div
+      class="hub-switcher-menu"
+      [ngClass]="{ 'hub-switcher-menu-dark': settingsButtons().darkMode.toggled }"
+      [ngStyle]="{ left: hubSwitcherLeft + 'px' }"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="hub-switcher-label">{{ 'WIZARD.recentlyOpened' | translate }}</div>
+      <ul>
+        @for (historyItem of vhaFileHistory(); track historyItem.vhaFilePath; let i = $index) {
+          <li
+            (click)="selectHub(i)"
+            class="hub-switcher-item"
+            [ngClass]="{ 'hub-switcher-current': i === 0 }"
+            [title]="historyItem.vhaFilePath"
+          >
+            {{ historyItem.hubName }}
+          </li>
+        }
+      </ul>
+      <div
+        (click)="selectOpenFromFile()"
+        class="hub-switcher-item hub-switcher-load"
+      >
+        {{ 'WIZARD.loadFromFile' | translate }}
+      </div>
+    </div>
+  }
   <div
     (click)="initiateMinimize.emit()"
     [ngClass]="{

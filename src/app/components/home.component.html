@@ -4,6 +4,8 @@
     (initiateClose)="initiateClose()"
     (initiateMaximize)="initiateMaximize()"
     (initiateMinimize)="initiateMinimize()"
+    (openFromHistory)="openFromHistory($event)"
+    (openFromFile)="loadFromFile()"
 
     [appState]="appState"
     [demo]="demo"
@@ -11,6 +13,7 @@
     [macVersion]="macVersion"
     [progressString]="progressString"
     [settingsButtons]="settingsButtons"
+    [vhaFileHistory]="vhaFileHistory"
    />
 
 @if (flickerReduceOverlay === true) {

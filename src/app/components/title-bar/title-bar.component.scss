@@ -19,13 +19,94 @@
   -webkit-app-region: drag;
   color: variables.$gray-70;
   font-size: 12px;
-  margin-top: 4px;
   overflow: hidden;
+  padding-top: 4px; // padding instead of margin so the hub switcher badge is not clipped
   position: absolute;
   text-align: center;
   transition: 300ms;
   white-space: nowrap;
   width: calc(100vw - 70px);
+}
+
+.hub-switcher-button {
+  -webkit-app-region: no-drag;
+  background-color: transparent;
+  border-radius: 3px;
+  color: variables.$pretty-pink;
+  cursor: pointer;
+  display: inline-block;
+  font-weight: 600;
+  margin-left: 2px;
+  padding: 1px 8px;
+  transform: translate(0, -3px); // same as .heading-title so the text baselines line up
+  transition: 200ms;
+  transition-property: background-color;
+
+  &:hover,
+  &.hub-switcher-open {
+    background-color: rgba(variables.$pretty-pink, 0.25);
+  }
+}
+
+.hub-switcher-menu {
+  -webkit-app-region: no-drag;
+  background: variables.$gray-05;
+  border: 1px solid variables.$gray-40;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  color: variables.$gray-80;
+  font-size: 12px;
+  max-height: 60vh;
+  max-width: 400px;
+  min-width: 200px;
+  overflow-y: auto;
+  padding: 6px 0;
+  position: absolute;
+  top: 21px;
+
+  ul {
+    margin: 0;
+    padding: 0;
+  }
+
+  &.hub-switcher-menu-dark {
+    background: variables.$gray-85;
+    border-color: variables.$gray-70;
+    color: variables.$gray-20;
+  }
+}
+
+.hub-switcher-label {
+  color: variables.$gray-50;
+  font-size: 10px;
+  font-style: italic;
+  padding: 2px 10px 4px;
+}
+
+.hub-switcher-item {
+  cursor: pointer;
+  list-style: none;
+  overflow: hidden;
+  padding: 4px 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &:hover {
+    background-color: rgba(variables.$pretty-pink, 0.2);
+    color: variables.$pretty-pink;
+  }
+
+  &.hub-switcher-current {
+    color: variables.$pretty-pink;
+    font-weight: bold;
+    pointer-events: none;
+  }
+
+  &.hub-switcher-load {
+    border-top: 1px solid rgba(variables.$gray-50, 0.4);
+    margin-top: 4px;
+    padding-top: 6px;
+  }
 }
 
 .window-button {
