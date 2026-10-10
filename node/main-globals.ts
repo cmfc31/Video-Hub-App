@@ -27,6 +27,7 @@ export const GLOBALS: VhaGlobals = {
     clipSnippets: 0,           // the number of video snippets in every clip; 0 == no clip extracted
     fixed: true,               // true => N screenshots per video; false => 1 screenshot every N minutes
     height: 288,
+    imageFormat: 'jpg',        // format of thumbnails, filmstrips, clip posters
     n: 10,
   },
   additionalExtensions: [],

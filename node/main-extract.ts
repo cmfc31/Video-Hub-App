@@ -33,9 +33,19 @@ const ffprobePath = resolveSpawnableExecutablePath(require('@ffprobe-installer/f
 import { GLOBALS } from './main-globals';
 
 import type { ImageElement, ScreenshotSettings } from '../interfaces/final-object.interface';
+import type { ImageAssetFolder, ImageFormat } from '../interfaces/image-format.util';
+import { imageFileName, tileWidth } from '../interfaces/image-format.util';
 
 // High JPEG quality for thumbnails and filmstrips (1 = best, 31 = worst).
 const FFMPEG_JPEG_QUALITY = '1';
+
+// AVIF (libaom) still-image quality -- lower is better; 14 is ~2.5x smaller than JPEG q1 with no visible loss.
+const AVIF_CRF = '14';
+// libaom speed preset (0 = slowest/best, 8 = fastest); 6 encodes a 12800px filmstrip in ~1s.
+const AVIF_CPU_USED = '6';
+
+// Approximate AVIF encode time per 1000px of output width -- used to extend the extraction timeouts.
+const AVIF_ENCODE_MS_PER_1000PX = 100;
 
 // Browser-safe preview clip encoding (H.264 Main + AAC), higher quality than default web presets.
 const PREVIEW_CLIP_CRF = '20';
@@ -78,11 +88,10 @@ function detectHardwareDecodeConfig(): Promise<HardwareDecodeConfig> {
   }
 
   const hwaccelCmd = '"' + ffmpegPath + '" -hide_banner -hwaccels';
-  const encoderCmd = '"' + ffmpegPath + '" -hide_banner -encoders';
 
   return Promise.all([
     execCommand(hwaccelCmd).catch(() => ''),
-    execCommand(encoderCmd).catch(() => ''),
+    getFfmpegEncoders(),
   ])
     .then(([hwaccelsOutput, encodersOutput]) => {
       const amfAvailable = /\bh264_amf\b/i.test(encodersOutput);
@@ -125,6 +134,83 @@ function injectInputScopedArgs(baseArgs: string[], inputScopedArgs: string[]): s
   }
 
   return result;
+}
+
+// ========================================================================================
+//          Image format helpers
+// ========================================================================================
+
+/**
+ * ffmpeg output args to encode a single still image in the given format.
+ * The container is picked by ffmpeg from the output file extension (`.jpg` / `.avif`).
+ */
+export function imageEncodeArgs(format: ImageFormat): string[] {
+  if (format === 'avif') {
+    return [
+      '-c:v', 'libaom-av1',
+      '-still-picture', '1',
+      '-crf', AVIF_CRF,
+      '-b:v', '0',
+      '-cpu-used', AVIF_CPU_USED,
+      '-row-mt', '1',
+      '-pix_fmt', 'yuv420p',
+    ];
+  }
+
+  return ['-q:v', FFMPEG_JPEG_QUALITY];
+}
+
+/**
+ * Full path to an image asset (thumbnail, filmstrip, or clip poster) in the hub's image format
+ *
+ * @param screenshotFolder   -- path to the `vha-<hubName>` folder
+ * @param folder             -- `thumbnails`, `filmstrips`, or `clips`
+ * @param hash               -- file hash
+ * @param screens            -- number of screenshots in the filmstrip (very wide AVIF filmstrips fall back to JPG)
+ * @param screenshotSettings -- the hub's ScreenshotSettings
+ */
+export function imageAssetPath(
+  screenshotFolder: string,
+  folder: ImageAssetFolder,
+  hash: string,
+  screens: number,
+  screenshotSettings: ScreenshotSettings,
+): string {
+  return path.join(
+    screenshotFolder,
+    folder,
+    imageFileName(hash, folder, screenshotSettings.imageFormat, screens, screenshotSettings.height)
+  );
+}
+
+/**
+ * Format of the image at `filePath`, based on its extension
+ */
+export function formatOfPath(filePath: string): ImageFormat {
+  return path.extname(filePath).toLowerCase() === '.avif' ? 'avif' : 'jpg';
+}
+
+/**
+ * Extra time (ms) needed to encode an image `widthPx` wide in the given format
+ */
+export function imageEncodeBudget(format: ImageFormat, widthPx: number): number {
+  return format === 'avif' ? 500 + AVIF_ENCODE_MS_PER_1000PX * widthPx / 1000 : 0;
+}
+
+let ffmpegEncodersPromise: Promise<string>;
+
+function getFfmpegEncoders(): Promise<string> {
+  if (!ffmpegEncodersPromise) {
+    ffmpegEncodersPromise = execCommand('"' + ffmpegPath + '" -hide_banner -encoders').catch(() => '');
+  }
+  return ffmpegEncodersPromise;
+}
+
+/**
+ * Whether the bundled ffmpeg can encode AVIF (`libaom-av1`) -- some platform builds may lack it
+ */
+export function isAvifEncoderAvailable(): Promise<boolean> {
+  return getFfmpegEncoders().then((encodersOutput: string) => /\blibaom-av1\b/.test(encodersOutput));
 }
 
 // ========================================================================================
@@ -233,8 +319,8 @@ const extractSingleFrameArgs = (
     '-ss', seekTime.toString(),
     '-i', pathToVideo,
     '-frames:v', '1',
-    '-q:v', FFMPEG_JPEG_QUALITY,
     '-vf', scaleAndPadString(ssWidth, screenshotHeight, isHdr),
+    ...imageEncodeArgs(formatOfPath(savePath)),
     savePath,
   ];
 
@@ -285,7 +371,7 @@ const generateScreenshotStripArgs = (
   args.push(
     '-filter_complex', allFramesFiltered + outputFrames + 'hstack=inputs=' + totalCount,
     '-frames:v', '1',
-    '-q:v', FFMPEG_JPEG_QUALITY,
+    ...imageEncodeArgs(formatOfPath(savePath)),
     savePath
   );
 
@@ -363,8 +449,8 @@ const generatePreviewClipArgs = (
 /**
  * Extract the first frame from the preview clip
  *
- * @param pathToClip -- full path to where the .mp4 clip is located
- * @param fileHash   -- full path to where the .jpg should be saved
+ * @param pathToClip  -- full path to where the .mp4 clip is located
+ * @param pathToThumb -- full path to where the image should be saved
  */
 const extractFirstFrameArgs = (
   pathToClip: string,
@@ -375,7 +461,7 @@ const extractFirstFrameArgs = (
     '-ss', '0',
     '-i', pathToClip,
     '-frames:v', '1',
-    '-q:v', FFMPEG_JPEG_QUALITY,
+    ...imageEncodeArgs(formatOfPath(pathToThumb)),
     pathToThumb,
   ];
 
@@ -429,7 +515,7 @@ const extractFirstFrameArgs = (
  *
  * @param currentElement     -- ImageElement to extract thumbs
  * @param videoFolderPath    -- path to base folder where videos are
- * @param screenshotFolder   -- path to folder where .jpg files will be saved
+ * @param screenshotFolder   -- path to folder where image files will be saved
  * @param screenshotSettings -- ScreenshotSettings object
  * @param done               -- execute this method when done extracting
  */
@@ -453,14 +539,19 @@ export function extractAll(
   const numOfScreens: number = currentElement.screens;
   const sourceHeight: number = currentElement.height;
 
-  const thumbnailSavePath: string = path.normalize(screenshotFolder + '/thumbnails/' + fileHash + '.jpg');
-  const filmstripSavePath: string = path.normalize(screenshotFolder + '/filmstrips/' + fileHash + '.jpg');
+  const thumbnailSavePath: string = imageAssetPath(screenshotFolder, 'thumbnails', fileHash, numOfScreens, screenshotSettings);
+  const filmstripSavePath: string = imageAssetPath(screenshotFolder, 'filmstrips', fileHash, numOfScreens, screenshotSettings);
   const clipSavePath:      string = path.normalize(screenshotFolder + '/clips/' +      fileHash + '.mp4');
-  const clipThumbSavePath: string = path.normalize(screenshotFolder + '/clips/' +      fileHash + '.jpg');
+  const clipThumbSavePath: string = imageAssetPath(screenshotFolder, 'clips',      fileHash, numOfScreens, screenshotSettings);
 
   const maxRunTime: ExtractionDurations = setExtractionDurations(
     sourceHeight, numOfScreens, screenshotHeight, clipSnippets, snippetLength, clipHeight
   );
+
+  // AVIF encoding is slower than JPEG -- extend the timeouts so wide filmstrips are not killed
+  maxRunTime.thumb     += imageEncodeBudget(formatOfPath(thumbnailSavePath), tileWidth(screenshotHeight));
+  maxRunTime.filmstrip += imageEncodeBudget(formatOfPath(filmstripSavePath), tileWidth(screenshotHeight) * numOfScreens);
+  maxRunTime.clipThumb += imageEncodeBudget(formatOfPath(clipThumbSavePath), tileWidth(clipHeight));
 
   let sourceIsHdr = false;
 
@@ -687,18 +778,19 @@ export function replaceThumbnailWithNewImage(
 
   const args = [
     '-i', newFile,
+    '-frames:v', '1',
     '-vf', scaleAndPadString(width, height, false),
-    '-q:v', FFMPEG_JPEG_QUALITY,
+    ...imageEncodeArgs(formatOfPath(oldFile)),
     oldFile,
   ];
 
-  return run_ffmpeg_with_decode_acceleration(args, 1000, 'replacing thumbnail');
-  // resizing an image file with ffmpeg should take less than 1 second
+  return run_ffmpeg_with_decode_acceleration(args, 1000 + imageEncodeBudget(formatOfPath(oldFile), width), 'replacing thumbnail');
+  // resizing an image file with ffmpeg should take less than 1 second (plus encode time for AVIF)
 }
 
 /**
  * Replace the thumbnail of an item by cropping the clicked screenshot straight out
- * of the already-generated filmstrip .jpg, overwriting the existing thumbnail.
+ * of the already-generated filmstrip image, overwriting the existing thumbnail.
  *
  * The filmstrip is `numOfScreens` equal-width tiles stacked horizontally (see
  * `generateScreenshotStripArgs`), and each tile is generated at the exact same
@@ -709,18 +801,20 @@ export function replaceThumbnailWithNewImage(
  * @param currentElement   -- ImageElement whose thumbnail to replace
  * @param screenshotFolder -- path to the `vha-<hubName>` folder holding thumbnails/ and filmstrips/
  * @param screenIndex      -- index of the clicked screenshot in the filmstrip (0-based)
+ * @param screenshotSettings -- the hub's ScreenshotSettings (image format and height)
  */
 export function replaceThumbnailWithFilmstripFrame(
   currentElement: ImageElement,
   screenshotFolder: string,
   screenIndex: number,
+  screenshotSettings: ScreenshotSettings,
 ): Promise<boolean> {
 
   const fileHash: string = currentElement.hash;
   const numOfScreens: number = currentElement.screens;
 
-  const filmstripPath: string = path.normalize(screenshotFolder + '/filmstrips/' + fileHash + '.jpg');
-  const thumbnailSavePath: string = path.normalize(screenshotFolder + '/thumbnails/' + fileHash + '.jpg');
+  const filmstripPath: string = imageAssetPath(screenshotFolder, 'filmstrips', fileHash, numOfScreens, screenshotSettings);
+  const thumbnailSavePath: string = imageAssetPath(screenshotFolder, 'thumbnails', fileHash, numOfScreens, screenshotSettings);
 
   // clamp so a click on the very right edge can't index past the last tile
   const tileIndex: number = Math.max(0, Math.min(screenIndex, numOfScreens - 1));
@@ -732,11 +826,13 @@ export function replaceThumbnailWithFilmstripFrame(
     '-i', filmstripPath,
     '-vf', cropFilter,
     '-frames:v', '1',
-    '-q:v', FFMPEG_JPEG_QUALITY,
+    ...imageEncodeArgs(formatOfPath(thumbnailSavePath)),
     thumbnailSavePath,
   ];
 
-  return spawn_ffmpeg_and_run(args, 2000, 'crop thumbnail from filmstrip');
+  const encodeBudget: number = imageEncodeBudget(formatOfPath(thumbnailSavePath), tileWidth(screenshotSettings.height));
+
+  return spawn_ffmpeg_and_run(args, 2000 + encodeBudget, 'crop thumbnail from filmstrip');
 }
 
 /**
@@ -789,7 +885,7 @@ function previewClipVideoScaleFilter(clipHeight: number, isHdr: boolean): string
  * @param maxRunningTime  maximum time to run ffmpeg
  * @param description     log for console.log
  */
-function spawn_ffmpeg_and_run(
+export function spawn_ffmpeg_and_run(
   args: string[],
   maxRunningTime: number,
   description: string

@@ -4,6 +4,7 @@ import type { AllowedScreenshotHeight, AllowedScreenshotHeightString } from '../
 import type { HistoryItem } from '../../../../interfaces/shared-interfaces';
 import type { ImportStage } from '../../../../node/main-support';
 import type { WizardOptions } from '../../../../interfaces/wizard-options.interface';
+import { normalizeImageFormat } from '../../../../interfaces/image-format.util';
 
 import { historyItemRemove, slowFadeIn } from '../../common/animations';
 
@@ -31,6 +32,7 @@ export class WizardComponent {
   readonly selectOutputDirectory      = output<void>();
   readonly selectSourceDirectory      = output<void>();
 
+  readonly avifAvailable = input<boolean>(true);
   readonly canCloseWizard = input<boolean>();
   readonly importStage = input<ImportStage>();
 
@@ -67,6 +69,14 @@ export class WizardComponent {
   selectScreenshotSize(pxHeightForImport: AllowedScreenshotHeightString | string): void {
     const height: AllowedScreenshotHeight = parseInt(pxHeightForImport, 10) as AllowedScreenshotHeight;
     this.wizard.screenshotSizeForImport = height;
+  }
+
+  /**
+   * Called on image format dropdown select
+   * @param format - `jpg` or `avif`
+   */
+  selectImageFormat(format: string): void {
+    this.wizard.imageFormat = normalizeImageFormat(format);
   }
 
   /**

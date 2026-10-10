@@ -99,7 +99,7 @@ export class ThumbnailComponent implements OnInit, OnChanges, OnDestroy {
       });
     } else {
       this.firstFilePath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'thumbnails', this.video.hash);
-      this.fullFilePath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', this.video.hash);
+      this.fullFilePath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', this.video.hash, false, this.video.screens);
       this.folderThumbPaths.push(this.firstFilePath);
     }
 

@@ -46,7 +46,7 @@ interface ffprobeFormat {
   size: string;
 }
 
-export type ImportStage = 'importingMeta' | 'importingScreenshots' | 'done';
+export type ImportStage = 'importingMeta' | 'importingScreenshots' | 'convertingImages' | 'done';
 
 /**
  * Return an HTML string for a path to a file

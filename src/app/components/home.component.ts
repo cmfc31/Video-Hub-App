@@ -29,8 +29,10 @@ import { SortOrderComponent } from './sort-order/sort-order.component';
 import type { ContextMenuCoordinate } from '../../../interfaces/shared-interfaces';
 import type { FinalObject, ImageElement, ScreenshotSettings, ResolutionString } from '../../../interfaces/final-object.interface';
 import { isPartialPathUnderPrefix } from '../../../interfaces/novha.util';
+import { imageFileName, normalizeImageFormat } from '../../../interfaces/image-format.util';
 import { formatFileSize, refreshFileSizeDisplays } from '../../../interfaces/file-size.util';
 import type { ImportStage } from '../../../node/main-support';
+import type { ImageConversionResult } from '../../../node/main-convert-images';
 import type { ServerDetails } from './statistics/statistics.component';
 import type { RemoteSettings, SettingsButtonSavedProperties, SettingsObject } from '../../../interfaces/settings-object.interface';
 import type { SortType } from '../pipes/sorting.pipe';
@@ -169,6 +171,8 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
   extractionPercent = 1;
   importStage: ImportStage = 'done';
+
+  avifAvailable = true; // updated by Node -- false when the bundled ffmpeg can not encode AVIF
   progressString = '';
 
   // ========================================================================
@@ -264,6 +268,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
     clipSnippets: 3,
     extractClips: false,
     futureHubName: '',
+    imageFormat: 'jpg',
     isFixedNumberOfScreenshots: true,
     screenshotSizeForImport: 288,
     selectedOutputFolder: '',
@@ -287,6 +292,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
     clipSnippets: 0,
     fixed: true,
     height: 432,
+    imageFormat: 'jpg',
     n: 3,
   };
 
@@ -595,6 +601,34 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
     });
 
+    (window as any).myElectron.receiveFromMain('avif-encoder-available', (available: boolean) => {
+      this.avifAvailable = available;
+    });
+
+    // all images of the hub were re-encoded into a new format: save the hub pointing at the new files
+    // Node then deletes the old-format images and re-opens the hub (see `commit-image-format`)
+    (window as any).myElectron.receiveFromMain('image-format-converted', (result: ImageConversionResult, vhaFile: string) => {
+      this.zone.run(() => {
+        if (vhaFile !== this.appState.currentVhaFile) {
+          return;
+        }
+
+        this.currentScreenshotSettings = { ...this.currentScreenshotSettings, imageFormat: result.format };
+        this.imageElementService.finalArrayNeedsSaving = true;
+
+        const finalObject: FinalObject = this.getFinalObjectForSaving();
+        if (finalObject) {
+          (window as any).myElectron.sendToMain('commit-image-format', finalObject);
+        }
+
+        this.modalService.openSnackbar(
+          this.translate.instant('SETTINGS.imagesConverted', result),
+          result.failed > 0 ? 'custom-snackbar' : 'success-snackbar',
+          5000
+        );
+      });
+    });
+
     // happens when user replaced a thumbnail and process is done
     (window as any).myElectron.receiveFromMain('thumbnail-replaced', (hash: string) => {
       (window as any).myElectron.clearCache();
@@ -763,6 +797,8 @@ export class HomeComponent implements OnInit, AfterViewInit {
       this.imageElementService.finalArrayNeedsSaving = false;
 
       this.currentScreenshotSettings = finalObject.screenshotSettings;
+      this.filePathService.imageFormat = normalizeImageFormat(finalObject.screenshotSettings.imageFormat);
+      this.filePathService.screenshotHeight = finalObject.screenshotSettings.height;
 
       this.appState.currentVhaFile = pathToFile;
       this.appState.selectedOutputFolder = outputFolderPath;
@@ -1033,7 +1069,12 @@ export class HomeComponent implements OnInit, AfterViewInit {
   draggingVideoFile(event, item: ImageElement): void {
     event.preventDefault();
     const fullPath = this.filePathService.getPathFromImageElement(item);
-    const imgPath = path.join(this.appState.selectedOutputFolder, 'vha-' + this.appState.hubName, 'thumbnails', item.hash + '.jpg');
+    const imgPath = path.join(
+      this.appState.selectedOutputFolder,
+      'vha-' + this.appState.hubName,
+      'thumbnails',
+      imageFileName(item.hash, 'thumbnails', this.filePathService.imageFormat, item.screens, this.filePathService.screenshotHeight)
+    );
     (window as any).myElectron.sendToMain('drag-video-out-of-electron', fullPath, imgPath);
   }
 
@@ -1409,6 +1450,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
              pathToNewImage.endsWith('.jpg')
           || pathToNewImage.endsWith('.jpeg')
           || pathToNewImage.endsWith('.png')
+          || pathToNewImage.endsWith('.avif')
         )
         && galleryItem.cleanName !== '*FOLDER*'
     ) {
@@ -2194,6 +2236,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
       clipSnippets: 5,
       extractClips: false,
       futureHubName: '',
+      imageFormat: this.wizard.imageFormat ?? 'jpg',
       isFixedNumberOfScreenshots: this.wizard.isFixedNumberOfScreenshots ?? true,
       screenshotSizeForImport: this.wizard.screenshotSizeForImport ?? 288, // default
       selectedOutputFolder: '',

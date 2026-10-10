@@ -61,9 +61,11 @@ To help debug a production build of VHA you can use [Debugtron](https://github.c
 
 Generated assets are stored under your hub output folder:
 
-- `vha-<hubName>/thumbnails/*.jpg`
-- `vha-<hubName>/filmstrips/*.jpg`
-- `vha-<hubName>/clips/*.mp4` and matching `*.jpg` posters
+- `vha-<hubName>/thumbnails/*.jpg` (or `*.avif`)
+- `vha-<hubName>/filmstrips/*.jpg` (or `*.avif`)
+- `vha-<hubName>/clips/*.mp4` and matching `*.jpg` (or `*.avif`) posters
+
+The image format is chosen per hub in the import wizard (**JPG** or **AVIF**, about 60% smaller). An existing hub can switch format under **Settings → Current hub → Image format → Convert images**: the existing images are re-encoded (the source videos are not needed), the hub is saved, and the old files are deleted. AVIF filmstrips wider than 32,768 px (the most Chromium can decode) stay JPG.
 
 VHA skips extraction when these files already exist, so **upgrading the app does not automatically re-encode old assets**.
 
@@ -74,7 +76,7 @@ To regenerate with the latest FFmpeg settings:
 3. Delete the assets you want recreated:
    - **Thumbnails only:** delete files in `thumbnails/`
    - **Filmstrips only:** delete files in `filmstrips/`
-   - **Preview clips only:** delete `.mp4` and `.jpg` pairs in `clips/`
+   - **Preview clips only:** delete `.mp4` and `.jpg` / `.avif` pairs in `clips/`
    - **Everything:** delete all three subfolders' contents (keep the folders themselves).
 4. Re-open the hub in VHA.
 5. Open **Statistics** and click **Add missing thumbnails** to queue re-extraction.

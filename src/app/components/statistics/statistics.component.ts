@@ -9,6 +9,9 @@ import { SourceFolderService } from './source-folder.service';
 
 import type { AppStateInterface } from '../../common/app-state';
 import type { ImageElement, ScreenshotSettings, InputSources } from '../../../../interfaces/final-object.interface';
+import type { ImageFormat } from '../../../../interfaces/image-format.util';
+import { normalizeImageFormat } from '../../../../interfaces/image-format.util';
+import type { ImportStage } from '../../../../node/main-support';
 
 import { metaAppear, breadcrumbWordAppear } from '../../common/animations';
 
@@ -48,6 +51,8 @@ export class StatisticsComponent implements OnInit, OnDestroy {
   readonly startServerOnPort = output<number>();
 
   readonly appState = input<AppStateInterface>();
+  readonly avifAvailable = input<boolean>(true);
+  readonly importStage = input<ImportStage>('done');
   readonly hubName = input<string>();
   readonly inputFolders = input<InputSources>();
   readonly numFolders = input<number>();
@@ -82,6 +87,9 @@ export class StatisticsComponent implements OnInit, OnDestroy {
 
   removeFoldersMode = false;
 
+  // format chosen in the "convert images" dropdown
+  convertTargetFormat: ImageFormat = 'avif';
+
   selectedPort = 3000;
   serverInfo: ServerDetails;
   serverRunning = false;
@@ -107,6 +115,8 @@ export class StatisticsComponent implements OnInit, OnDestroy {
   ngOnInit() {
     console.log('booting up!');
     this.computeAverages();
+
+    this.convertTargetFormat = this.currentImageFormat() === 'avif' ? 'jpg' : 'avif';
 
     const appState = this.appState();
     console.log('port from settings:', appState.port);
@@ -329,6 +339,29 @@ export class StatisticsComponent implements OnInit, OnDestroy {
       'request-missing-assets-stats',
       this.imageElementService.imageElements,
       this.screenshotSettings.clipSnippets > 0
+    );
+  }
+
+  currentImageFormat(): ImageFormat {
+    return normalizeImageFormat(this.screenshotSettings.imageFormat);
+  }
+
+  selectConvertTargetFormat(format: string): void {
+    this.convertTargetFormat = normalizeImageFormat(format);
+  }
+
+  /**
+   * Tell node to re-encode every existing thumbnail, filmstrip, and clip poster in the chosen format
+   * When done, `home.component` saves the hub with the new format (see `image-format-converted`)
+   */
+  convertImages(): void {
+    if (this.convertTargetFormat === this.currentImageFormat()) {
+      return;
+    }
+    (window as any).myElectron.sendToMain(
+      'convert-hub-images',
+      this.convertTargetFormat,
+      this.imageElementService.imageElements
     );
   }
 

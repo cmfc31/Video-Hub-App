@@ -1,3 +1,5 @@
+import type { ImageFormat } from './image-format.util';
+
 export type StarRating = 0.5 | 1.5 | 2.5 | 3.5 | 4.5 | 5.5;
 
 // must be heights from true `16:9` resolutions AND divisible by 8
@@ -105,5 +107,6 @@ export interface ScreenshotSettings {
   clipSnippets: number;        // the number of video snippets in every clip; 0 == no clip extracted
   fixed: boolean;
   height: AllowedScreenshotHeight;
+  imageFormat?: ImageFormat;   // format of thumbnails, filmstrips, clip posters; missing in older hubs == 'jpg'
   n: number;
 }

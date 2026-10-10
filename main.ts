@@ -18,10 +18,14 @@ import { setUpIpcMessages } from './node/main-ipc';
 import { sendFinalObjectToAngular, setUpDirectoryWatchers, upgradeToVersion3, writeVhaFileToDisk, parseAdditionalExtensions } from './node/main-support';
 
 // Interfaces
-import { FinalObject } from './interfaces/final-object.interface';
+import { FinalObject, ImageElement } from './interfaces/final-object.interface';
 import { SettingsObject } from './interfaces/settings-object.interface';
 import { WizardOptions } from './interfaces/wizard-options.interface';
 import { preventSleep, resetAllQueues } from './node/main-extract-async';
+import { cancelImageConversion, commitImageConversion, startImageConversion } from './node/main-convert-images';
+import { isAvifEncoderAvailable } from './node/main-extract';
+import { normalizeImageFormat } from './interfaces/image-format.util';
+import type { ImageFormat } from './interfaces/image-format.util';
 
 // Variables
 const pathToAppData = app.getPath('appData');
@@ -285,6 +289,7 @@ function getAngularToShutDown(): void {
 function openThisDamnFile(pathToVhaFile: string): void {
 
   resetAllQueues();
+  cancelImageConversion();
 
   macFirstRun = false;     // TODO - figure out how to open file when double click first time on Mac
 
@@ -306,6 +311,7 @@ function openThisDamnFile(pathToVhaFile: string): void {
       GLOBALS.currentlyOpenVhaFile = pathToVhaFile;
       GLOBALS.selectedOutputFolder = path.parse(pathToVhaFile).dir;
       GLOBALS.hubName = finalObject.hubName;
+      finalObject.screenshotSettings.imageFormat = normalizeImageFormat(finalObject.screenshotSettings.imageFormat);
       GLOBALS.screenshotSettings = finalObject.screenshotSettings;
       upgradeToVersion3(finalObject);
       console.log('setting inputDirs');
@@ -339,6 +345,11 @@ ipcMain.on('just-started', (event) => {
     tellElectronDarkModeChange(systemPreferences.getEffectiveAppearance());
   }
 
+  // the AVIF option is only enabled when the bundled ffmpeg can encode it
+  isAvifEncoderAvailable().then((available: boolean) => {
+    event.sender.send('avif-encoder-available', available);
+  });
+
   // Reference: https://github.com/electron/electron/blob/master/docs/api/locales.md
   const locale: string = app.getLocale();
 
@@ -368,6 +379,7 @@ ipcMain.on('just-started', (event) => {
  */
 ipcMain.on('start-the-import', (event, wizard: WizardOptions) => {
 
+  cancelImageConversion();
   preventSleep();
 
   const hubName = wizard.futureHubName;
@@ -395,6 +407,7 @@ ipcMain.on('start-the-import', (event, wizard: WizardOptions) => {
       clipSnippets: wizard.extractClips ? wizard.clipSnippets : 0,
       fixed: wizard.isFixedNumberOfScreenshots,
       height: wizard.screenshotSizeForImport,
+      imageFormat: normalizeImageFormat(wizard.imageFormat),
       n: wizard.isFixedNumberOfScreenshots ? wizard.ssConstant : wizard.ssVariable,
     };
 
@@ -479,6 +492,34 @@ ipcMain.on('load-this-vha-file', (event, pathToVhaFile: string, finalObjectToSav
 ipcMain.on('cancel-current-import', (event): void => {
   GLOBALS.winRef.setProgressBar(-1);
   resetAllQueues();
+  cancelImageConversion();
+});
+
+/**
+ * Convert all existing images of the current hub (thumbnails, filmstrips, clip posters) to another format
+ * Angular gets `image-format-converted` when done and then saves the hub with `commit-image-format`
+ */
+ipcMain.on('convert-hub-images', (event, targetFormat: ImageFormat, finalArray: ImageElement[]): void => {
+  startImageConversion(finalArray, targetFormat);
+});
+
+/**
+ * Save the hub with its new image format, delete the old-format images, and re-open the hub
+ * so every view reloads its images with the new file extension
+ */
+ipcMain.on('commit-image-format', (event, finalObjectToSave: FinalObject): void => {
+  const pathToVhaFile: string = GLOBALS.currentlyOpenVhaFile;
+
+  if (!finalObjectToSave || !pathToVhaFile) {
+    return;
+  }
+
+  writeVhaFileToDisk(finalObjectToSave, pathToVhaFile, (err: any) => {
+    if (!err) { // only delete the old-format images once the hub points to the new ones
+      commitImageConversion(pathToVhaFile, normalizeImageFormat(finalObjectToSave.screenshotSettings.imageFormat));
+    }
+    openThisDamnFile(pathToVhaFile);
+  });
 });
 
 /**

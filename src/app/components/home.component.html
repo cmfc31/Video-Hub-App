@@ -273,7 +273,9 @@
         (startServerOnPort)="startServer($event)"
 
         [appState]="appState"
+        [avifAvailable]="avifAvailable"
         [hubName]="appState.hubName"
+        [importStage]="importStage"
         [inputFolders]="sourceFolderService.selectedSourceFolder"
         [numFolders]="appState.numOfFolders"
         [pathToVhaFile]="appState.currentVhaFile"
@@ -1441,6 +1443,7 @@
   (selectOutputDirectory)="selectOutputDirectory()"
   (selectSourceDirectory)="selectSourceDirectory()"
 
+  [avifAvailable]="avifAvailable"
   [canCloseWizard]="canCloseWizard"
   [importStage]="importStage"
   [vhaFileHistory]="vhaFileHistory"

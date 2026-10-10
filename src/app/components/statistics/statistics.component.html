@@ -231,6 +231,11 @@
       </tr>
 
       <tr>
+        <td>{{ 'STATISTICS.imageFormat' | translate }}</td>
+        <td class="rightCol">{{ currentImageFormat() | uppercase }}</td>
+      </tr>
+
+      <tr>
         <td>{{ 'STATISTICS.numOfThumbs' | translate }}</td>
         <td class="rightCol">
           {{ screenshotSettings.fixed ? ''                                  : ('STATISTICS.oneEvery' | translate) }}
@@ -376,6 +381,43 @@
 
       <span *ngIf="missingAssetsLoading" class="missing-assets-loading">
         {{ 'STATISTICS.refreshingMissingAssetsStats' | translate }}
+      </span>
+    </div>
+  </div>
+
+  <span class="stats-heading title sources missing-assets-title">{{ 'STATISTICS.imageFormat' | translate }}</span>
+
+  <div class="missing-assets-section">
+    <p class="missing-assets-hint">{{ 'STATISTICS.imageFormatHint' | translate }}</p>
+
+    <div class="missing-assets-stats-grid">
+      <div class="missing-assets-stat-row">
+        <span>{{ 'STATISTICS.currentImageFormat' | translate }}</span>
+        <span class="missing-assets-stat-value">{{ currentImageFormat() | uppercase }}</span>
+      </div>
+    </div>
+
+    <div class="missing-assets-actions">
+      <select
+        #convertFormatSelect
+        (change)="selectConvertTargetFormat(convertFormatSelect.value)"
+        class="language-drop-down"
+        [disabled]="importStage() !== 'done'"
+      >
+        <option value="jpg" [selected]="convertTargetFormat === 'jpg'">JPG</option>
+        <option value="avif" [selected]="convertTargetFormat === 'avif'" [disabled]="!avifAvailable()">AVIF</option>
+      </select>
+
+      <button
+        class="wizard-button start-import"
+        (click)="convertImages()"
+        [disabled]="importStage() !== 'done' || convertTargetFormat === currentImageFormat()"
+      >
+        {{ 'STATISTICS.convertImages' | translate }}
+      </button>
+
+      <span *ngIf="importStage() === 'convertingImages'" class="missing-assets-loading">
+        {{ 'STATISTICS.convertingImages' | translate }}
       </span>
     </div>
   </div>

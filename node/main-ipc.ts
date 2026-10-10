@@ -1,4 +1,4 @@
-import { app, dialog, shell, BrowserWindow } from 'electron';
+import { app, dialog, nativeImage, shell, BrowserWindow } from 'electron';
 
 import * as path from 'path';
 const fs = require('fs');
@@ -9,8 +9,10 @@ import { GLOBALS } from './main-globals';
 import { ImageElement, FinalObject, InputSources } from '../interfaces/final-object.interface';
 import { SettingsObject } from '../interfaces/settings-object.interface';
 import { createDotPlsFile, writeVhaFileToDisk } from './main-support';
-import { replaceThumbnailWithNewImage, replaceThumbnailWithFilmstripFrame } from './main-extract';
+import { imageAssetPath, replaceThumbnailWithNewImage, replaceThumbnailWithFilmstripFrame } from './main-extract';
 import { closeWatcher, startWatcher, extractAnyMissingThumbs, removeThumbnailsNotInHub } from './main-extract-async';
+import { isImageConversionRunning } from './main-convert-images';
+import { ALL_IMAGE_EXTENSIONS } from '../interfaces/image-format.util';
 
 /**
  * Set up the listeners
@@ -92,11 +94,11 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
 
   /**
    * Handle dragging a file out of VHA into a video editor (e.g. Vegas or Premiere)
-   * if `imgPath` points to a file that does not exist, replace with default image
+   * if `imgPath` points to a file that does not exist (or is an `.avif` Electron can not use as an icon), replace with default image
    */
   ipc.on('drag-video-out-of-electron', (event, filePath, imgPath): void => {
     fs.access(imgPath, fs.constants.F_OK, (err: any) => {
-      if (!err) {
+      if (!err && !nativeImage.createFromPath(imgPath).isEmpty()) {
         event.sender.startDrag({
           file: filePath,
           icon: imgPath,
@@ -236,11 +238,12 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
    * Method to replace thumbnail of a particular item
    */
   ipc.on('replace-thumbnail', (event, pathToIncomingJpg: string, item: ImageElement) => {
-    const fileToReplace: string = path.join(
-        GLOBALS.selectedOutputFolder,
-        'vha-' + GLOBALS.hubName,
+    const fileToReplace: string = imageAssetPath(
+        path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName),
         'thumbnails',
-        item.hash + '.jpg'
+        item.hash,
+        item.screens,
+        GLOBALS.screenshotSettings
       );
 
     const height: number = GLOBALS.screenshotSettings.height;
@@ -262,7 +265,7 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
   ipc.on('replace-thumbnail-with-frame', (event, item: ImageElement, screenIndex: number) => {
     const screenshotOutputFolder: string = path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName);
 
-    replaceThumbnailWithFilmstripFrame(item, screenshotOutputFolder, screenIndex)
+    replaceThumbnailWithFilmstripFrame(item, screenshotOutputFolder, screenIndex, GLOBALS.screenshotSettings)
       .then((success: boolean) => {
         if (success) {
           event.sender.send('thumbnail-replaced', item.hash);
@@ -328,7 +331,7 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
     const allHashes = getLiveVideoHashes(finalArray);
 
     // Keep the asset folder aligned with the current vha2 contents.
-    removeThumbnailsNotInHub(allHashes, screenshotOutputFolder);
+    removeThumbnailsNotInHub(allHashes, screenshotOutputFolder, !isImageConversionRunning());
     extractAnyMissingThumbs(missingOnly);
   });
 
@@ -346,7 +349,7 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
     const screenshotOutputFolder: string = path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName);
     // !! ^^^^^^^^^^^^^^^^^^^^^^ - make sure this points to the folder with screenshots only!
     const allHashes = getLiveVideoHashes(finalArray);
-    removeThumbnailsNotInHub(allHashes, screenshotOutputFolder); // WARNING !!! this function will delete stuff
+    removeThumbnailsNotInHub(allHashes, screenshotOutputFolder, !isImageConversionRunning()); // WARNING !!! this function will delete stuff
   });
 
   /**
@@ -492,11 +495,10 @@ function getMissingAssetsStats(
       stats.videosChecked++;
 
       let missingForThisVideo = false;
-      const fileHash = element.hash;
 
       missingForThisVideo = updateMissingAssetCountsForElement(
         stats,
-        fileHash,
+        element,
         screenshotOutputFolder,
         shouldExtractClips
       );
@@ -522,19 +524,20 @@ function updateMissingAssetCountsForElement(
     missingClips: number;
     missingClipThumbnails: number;
   },
-  fileHash: string,
+  element: ImageElement,
   screenshotOutputFolder: string,
   shouldExtractClips: boolean
 ): boolean {
   let missingForThisVideo = false;
+  const fileHash: string = element.hash;
 
-  const thumbnailPath = path.join(screenshotOutputFolder, 'thumbnails', fileHash + '.jpg');
+  const thumbnailPath = imageAssetPath(screenshotOutputFolder, 'thumbnails', fileHash, element.screens, GLOBALS.screenshotSettings);
   if (!fs.existsSync(thumbnailPath)) {
     stats.missingThumbnails++;
     missingForThisVideo = true;
   }
 
-  const filmstripPath = path.join(screenshotOutputFolder, 'filmstrips', fileHash + '.jpg');
+  const filmstripPath = imageAssetPath(screenshotOutputFolder, 'filmstrips', fileHash, element.screens, GLOBALS.screenshotSettings);
   if (!fs.existsSync(filmstripPath)) {
     stats.missingFilmstrips++;
     missingForThisVideo = true;
@@ -547,7 +550,7 @@ function updateMissingAssetCountsForElement(
       missingForThisVideo = true;
     }
 
-    const clipThumbnailPath = path.join(screenshotOutputFolder, 'clips', fileHash + '.jpg');
+    const clipThumbnailPath = imageAssetPath(screenshotOutputFolder, 'clips', fileHash, element.screens, GLOBALS.screenshotSettings);
     if (!fs.existsSync(clipThumbnailPath)) {
       stats.missingClipThumbnails++;
       missingForThisVideo = true;
@@ -575,22 +578,25 @@ function getElementsWithMissingAssets(
     };
     return updateMissingAssetCountsForElement(
       tempCounts,
-      element.hash,
+      element,
       screenshotOutputFolder,
       shouldExtractClips
     );
   });
 }
 
-function getLiveVideoHashes(finalArray: ImageElement[]): Map<string, 1> {
-  const allHashes: Map<string, 1> = new Map();
+/**
+ * Map of every live video hash -> number of screens in its filmstrip
+ */
+function getLiveVideoHashes(finalArray: ImageElement[]): Map<string, number> {
+  const allHashes: Map<string, number> = new Map();
 
   (finalArray || [])
     .filter((element: ImageElement) => {
       return !element.deleted && element.cleanName !== '*FOLDER*';
     })
     .forEach((element: ImageElement) => {
-      allHashes.set(element.hash, 1);
+      allHashes.set(element.hash, element.screens);
     });
 
   return allHashes;
@@ -605,12 +611,15 @@ function deleteRelatedVideoAssets(hash: string): void {
   }
 
   const assetRoot = path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName);
-  const assetsToDelete = [
-    path.join(assetRoot, 'thumbnails', hash + '.jpg'),
-    path.join(assetRoot, 'filmstrips', hash + '.jpg'),
-    path.join(assetRoot, 'clips', hash + '.mp4'),
-    path.join(assetRoot, 'clips', hash + '.jpg'),
-  ];
+  // delete images in every format -- a hub mid-conversion can have both
+  const assetsToDelete = [path.join(assetRoot, 'clips', hash + '.mp4')];
+  ALL_IMAGE_EXTENSIONS.forEach((ext: string) => {
+    assetsToDelete.push(
+      path.join(assetRoot, 'thumbnails', hash + ext),
+      path.join(assetRoot, 'filmstrips', hash + ext),
+      path.join(assetRoot, 'clips', hash + ext),
+    );
+  });
 
   assetsToDelete.forEach((assetPath: string) => {
     fs.unlink(assetPath, () => {});

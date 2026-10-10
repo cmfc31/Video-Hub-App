@@ -87,7 +87,7 @@ export class SheetComponent implements OnInit, OnChanges {
   refreshMediaPaths() {
     const video = this.video();
     this.arrayHack = Array.from({ length: video.screens }, (_, index) => index);
-    this.pathToFilmstripJpg = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', video.hash);
+    this.pathToFilmstripJpg = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', video.hash, false, video.screens);
     this.pathToVideoFile = path.join(this.selectedSourceFolder(), video.partialPath, video.fileName);
     this.percentOffset = (100 / video.screens);
     this.starRatingHack = this.star();

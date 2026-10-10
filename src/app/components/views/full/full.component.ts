@@ -69,7 +69,7 @@ export class FullViewComponent implements OnInit, OnChanges {
   }
 
   refreshMediaPaths() {
-    this.fullFilePath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', this.video().hash);
+    this.fullFilePath = this.filePathService.createFilePath(this.folderPath(), this.hubName(), 'filmstrips', this.video().hash, false, this.video().screens);
     this.render();
   }
 

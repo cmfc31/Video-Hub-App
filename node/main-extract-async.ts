@@ -13,7 +13,8 @@ import { GLOBALS } from './main-globals';
 
 import type { ImageElement, ImageElementPlus } from '../interfaces/final-object.interface';
 import { acceptableFiles } from './main-filenames';
-import { extractAll } from './main-extract';
+import { extractAll, imageAssetPath } from './main-extract';
+import { ALL_IMAGE_EXTENSIONS } from '../interfaces/image-format.util';
 import { sendCurrentProgress, insertTemporaryFieldsSingle, extractMetadataAsync, cleanUpFileName } from './main-support';
 import {
   findNovhaFolderPaths,
@@ -153,7 +154,7 @@ function thumbQueueRunner(element: ImageElement, done): void {
   const screenshotOutputFolder: string = path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName);
   const shouldExtractClips: boolean = GLOBALS.screenshotSettings.clipSnippets > 0;
 
-  hasAllThumbs(element.hash, screenshotOutputFolder, shouldExtractClips)
+  hasAllThumbs(element.hash, element.screens, screenshotOutputFolder, shouldExtractClips)
     .then(() => {
       done();
     })
@@ -609,20 +610,22 @@ function includeFolderAndRescan(inputSource: number, inputDir: string, folderRel
  * Check if thumbnail, flimstrip, and clip is present
  * return boolean
  * @param fileHash           - unique identifier of the file
+ * @param screens            - number of screenshots in the filmstrip
  * @param screenshotFolder   - path to where thumbnails are
  * @param shouldExtractClips - whether or not to extract clips
  */
 function hasAllThumbs(
   fileHash: string,
+  screens: number,
   screenshotFolder: string,
   shouldExtractClips: boolean
 ): Promise<boolean> {
   return new Promise((resolve, reject) => {
 
-    const thumb: string =     path.join(screenshotFolder, '/thumbnails/', fileHash + '.jpg');
-    const filmstrip: string = path.join(screenshotFolder, '/filmstrips/', fileHash + '.jpg');
+    const thumb: string =     imageAssetPath(screenshotFolder, 'thumbnails', fileHash, screens, GLOBALS.screenshotSettings);
+    const filmstrip: string = imageAssetPath(screenshotFolder, 'filmstrips', fileHash, screens, GLOBALS.screenshotSettings);
     const clip: string =      path.join(screenshotFolder, '/clips/',      fileHash + '.mp4');
-    const clipThumb: string = path.join(screenshotFolder, '/clips/',      fileHash + '.jpg');
+    const clipThumb: string = imageAssetPath(screenshotFolder, 'clips',      fileHash, screens, GLOBALS.screenshotSettings);
 
     Promise.all([
       fs.promises.access(thumb, fs.constants.F_OK),
@@ -688,10 +691,13 @@ export function extractAnyMissingThumbs(fullArray: ImageElement[]): void {
  * !!! WARNING !!! THIS FUNCTION WILL DELETE STUFF !!!
  *
  * Scan the provided directory and delete any file not in `hashesPresent`
- * @param hashesPresent
- * @param directory
+ * Also deletes images of a live video saved in a format other than the hub's current one
+ * (e.g. a `.jpg` left behind after converting the hub to `.avif`)
+ * @param hashesPresent      - hash -> number of screens in its filmstrip
+ * @param directory          - the `vha-<hubName>` folder
+ * @param removeStaleFormats - false while an image format conversion is running (both formats exist then)
  */
-export function removeThumbnailsNotInHub(hashesPresent: Map<string, 1>, directory: string): void {
+export function removeThumbnailsNotInHub(hashesPresent: Map<string, number>, directory: string, removeStaleFormats: boolean): void {
 
   deleteThumbQueue.pause();
   numberOfThumbsDeleted = 0;
@@ -700,7 +706,7 @@ export function removeThumbnailsNotInHub(hashesPresent: Map<string, 1>, director
     .withFullPaths()
     .filter((file: string) => {
       const  it: string = file.toLowerCase();
-      return it.endsWith('.jpg') || it.endsWith('.mp4');
+      return it.endsWith('.mp4') || ALL_IMAGE_EXTENSIONS.some((ext: string) => it.endsWith(ext));
     })
     .crawl(directory);
 
@@ -711,6 +717,9 @@ export function removeThumbnailsNotInHub(hashesPresent: Map<string, 1>, director
       const fileNameHash = parsedPath.name;
 
       if (!hashesPresent.has(fileNameHash)) {
+        deleteThumbQueue.push(file);
+        numberOfThumbsDeleted++;
+      } else if (removeStaleFormats && isStaleImageFormat(file, hashesPresent.get(fileNameHash), directory)) {
         deleteThumbQueue.push(file);
         numberOfThumbsDeleted++;
       }
@@ -724,6 +733,25 @@ export function removeThumbnailsNotInHub(hashesPresent: Map<string, 1>, director
 
   });
 
+}
+
+/**
+ * True when `file` is an image of a live video, but not in the format the hub expects for it
+ * @param file      - full path to an asset inside `directory`
+ * @param screens   - number of screens in the video's filmstrip
+ * @param directory - the `vha-<hubName>` folder
+ */
+function isStaleImageFormat(file: string, screens: number, directory: string): boolean {
+  const parsedPath = path.parse(file);
+  const folder: string = path.basename(parsedPath.dir);
+
+  if (parsedPath.ext.toLowerCase() === '.mp4' || (folder !== 'thumbnails' && folder !== 'filmstrips' && folder !== 'clips')) {
+    return false;
+  }
+
+  const expectedPath: string = imageAssetPath(directory, folder, parsedPath.name, screens, GLOBALS.screenshotSettings);
+
+  return path.normalize(expectedPath).toLowerCase() !== path.normalize(file).toLowerCase();
 }
 
 function deleteThumbQueueRunner(pathToFile: string, done): void {
@@ -745,7 +773,7 @@ export function preventSleep(): void {
 /**
  * Allow PC to go to sleep after screenshots were extracted
  */
-function allowSleep(): void {
+export function allowSleep(): void {
   console.log('allowing sleep');
   if (preventSleepIds.length) {
     preventSleepIds.forEach((id: number) => {

@@ -271,6 +271,30 @@
       {{ 'WIZARD.sizeOfScreenshots' | translate }}
     </span>
 
+    <br>
+
+    <select
+      #imageFormatSelectElement
+      (change)="selectImageFormat(imageFormatSelectElement.value)"
+      class="size-dropdown language-drop-down"
+      [disabled]="wizard.selectedOutputFolder === ''
+               || wizard.selectedSourceFolder[0].path === ''
+               || wizard.futureHubName === ''"
+    >
+      <option value="jpg" [selected]="wizard.imageFormat !== 'avif'">JPG</option>
+      <option value="avif" [selected]="wizard.imageFormat === 'avif'" [disabled]="!avifAvailable()">AVIF</option>
+    </select>
+
+    <span
+      class="step-four-text"
+      [ngClass]="{
+          'dim-row': !(wizard.selectedOutputFolder !== '' && wizard.selectedSourceFolder[0].path !== '')
+        }"
+      [title]="'WIZARD.imageFormatHint' | translate"
+    >
+      {{ 'WIZARD.imageFormat' | translate }}
+    </span>
+
     <!-- STEP 5 -------------------------------------------------------------------------------- -->
 
     <div
