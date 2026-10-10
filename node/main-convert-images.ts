@@ -27,6 +27,9 @@ import { normalizeImageFormat, tileWidth } from '../interfaces/image-format.util
 // libaom already uses several threads per image (`-row-mt`) -- a few parallel jobs keep all cores busy
 const CONVERSION_CONCURRENCY = 3;
 
+// minimum time before a single image conversion is considered stuck
+const CONVERSION_MIN_TIMEOUT_MS = 30000;
+
 const IMAGE_FOLDERS: ImageAssetFolder[] = ['thumbnails', 'filmstrips', 'clips'];
 
 export interface ImageConversionResult {
@@ -41,6 +44,7 @@ type ConversionOutcome = 'converted' | 'failed' | 'missing';
 interface ConversionTask {
   folder: ImageAssetFolder;
   hash: string;
+  retried?: boolean;  // true once a failed conversion was queued again
   screens: number;
 }
 
@@ -230,10 +234,24 @@ function convertOneImage(job: ConversionJob, task: ConversionTask, done): void {
         : task.folder === 'clips'      ? tileWidth(job.sourceSettings.clipHeight)
         :                                tileWidth(job.sourceSettings.height);
 
-      spawn_ffmpeg_and_run(args, 2000 + imageEncodeBudget(targetFormat, width) * 2, 'convert image')
+      // several encodes run in parallel and compete for the CPU -- be generous, an image-to-image encode never hangs
+      const maxRunTime: number = CONVERSION_MIN_TIMEOUT_MS + imageEncodeBudget(targetFormat, width) * 4;
+
+      spawn_ffmpeg_and_run(args, maxRunTime, 'convert image')
         .then((success: boolean) => {
           if (!success) {
-            fs.unlink(tempPath, () => finished('failed'));
+            // a killed ffmpeg keeps the temp file locked for a moment (Windows) -- wait before removing it
+            setTimeout(() => {
+              fs.unlink(tempPath, () => {
+                if (!task.retried && currentJob === job) {
+                  // retry once at the end of the queue, when fewer encodes compete for the CPU
+                  job.queue.push({ ...task, retried: true });
+                  done();
+                } else {
+                  finished('failed');
+                }
+              });
+            }, 1500);
             return;
           }
           fs.rename(tempPath, targetPath, (err: any) => {
