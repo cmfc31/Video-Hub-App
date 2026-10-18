@@ -189,6 +189,11 @@
   opacity: 0.45;
 }
 
+.reorder-selected {
+  outline: 3px solid #3d8bfd;
+  outline-offset: -3px;
+}
+
 .bottom-of-scroller-spacer {
   height: 160px;
 }

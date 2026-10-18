@@ -100,7 +100,10 @@
           (click)="moveVideoToTop()"
           [ngClass]="{ 'right-click-disabled': !sourceFolderService.sourceFolderConnected[currentRightClickedItem.inputSource] }"
         >
-                                                                {{ 'RIGHTCLICK.moveToTop'   | translate }}</li>
+                                                                {{ 'RIGHTCLICK.moveToTop'   | translate }}
+          @if (reorderSelectionForRightClick().length > 1) {
+            ({{ reorderSelectionForRightClick().length }})
+          }</li>
       }
 
       <li
@@ -972,7 +975,8 @@
           style="display: inline-block"
           [ngClass]="{
               'reorder-drag-over': reorderDragOverHash === item.hash,
-              'reorder-dragging': reorderDragHash === item.hash
+              'reorder-dragging': reorderDragHash === item.hash || reorderDragGroup.has(item.hash),
+              'reorder-selected': isReorderSelected(item)
             }"
           [ngStyle]="{
               height:   previewHeight
@@ -1017,7 +1021,8 @@
           style="display: block"
           [ngClass]="{
               'reorder-drag-over': reorderDragOverHash === item.hash,
-              'reorder-dragging': reorderDragHash === item.hash
+              'reorder-dragging': reorderDragHash === item.hash || reorderDragGroup.has(item.hash),
+              'reorder-selected': isReorderSelected(item)
             }"
           [ngStyle]="{
               height:   previewHeight
@@ -1060,7 +1065,8 @@
           style="display: block"
           [ngClass]="{
               'reorder-drag-over': reorderDragOverHash === item.hash,
-              'reorder-dragging': reorderDragHash === item.hash
+              'reorder-dragging': reorderDragHash === item.hash || reorderDragGroup.has(item.hash),
+              'reorder-selected': isReorderSelected(item)
             }"
          />
       }
@@ -1091,7 +1097,8 @@
           style="display: block"
           [ngClass]="{
               'reorder-drag-over': reorderDragOverHash === item.hash,
-              'reorder-dragging': reorderDragHash === item.hash
+              'reorder-dragging': reorderDragHash === item.hash || reorderDragGroup.has(item.hash),
+              'reorder-selected': isReorderSelected(item)
             }"
          />
       }
@@ -1146,7 +1153,8 @@
 
           [ngClass]="{
               'reorder-drag-over': reorderDragOverHash === item.hash,
-              'reorder-dragging': reorderDragHash === item.hash
+              'reorder-dragging': reorderDragHash === item.hash || reorderDragGroup.has(item.hash),
+              'reorder-selected': isReorderSelected(item)
             }"
           [ngStyle]="{ display: appState.currentView === 'showDetails' ? 'block' : 'inline-block' }"
          />
@@ -1190,7 +1198,8 @@
           style="display: inline-block"
           [ngClass]="{
               'reorder-drag-over': reorderDragOverHash === item.hash,
-              'reorder-dragging': reorderDragHash === item.hash
+              'reorder-dragging': reorderDragHash === item.hash || reorderDragGroup.has(item.hash),
+              'reorder-selected': isReorderSelected(item)
             }"
          />
       }

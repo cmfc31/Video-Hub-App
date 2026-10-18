@@ -49,7 +49,12 @@ import {
   AllSupportedBottomTrayViews,
   AllSupportedViews
 } from '../../../interfaces/shared-interfaces';
-import { computeMoveToTopMtime, computeReorderMtimes } from '../common/reorder-mtime';
+import {
+  computeGroupMoveToTopMtimes,
+  computeGroupReorderMtimes,
+  computeMoveToTopMtime,
+  computeReorderMtimes,
+} from '../common/reorder-mtime';
 import type { MtimeUpdate } from '../common/reorder-mtime';
 
 // Constants, etc
@@ -354,6 +359,10 @@ export class HomeComponent implements OnInit, AfterViewInit {
   reorderDragHash: string = null;
   /** Hash of video under the reorder drag pointer */
   reorderDragOverHash: string = null;
+  /** Videos multi-selected with Ctrl + Alt + Click for group drag-reorder / move to top */
+  reorderSelectedHashes: Set<string> = new Set();
+  /** Hashes being dragged as a group (empty for a single-video drag) */
+  reorderDragGroup: Set<string> = new Set();
   /** Pending mtime updates waiting for IPC confirmation */
   private pendingMtimeUpdates: MtimeUpdate[] = [];
   /** Last pointer Y during reorder drag (for edge auto-scroll) */
@@ -406,6 +415,8 @@ export class HomeComponent implements OnInit, AfterViewInit {
       this.rightClickShowing = false;
       this.renamingNow = false;
       this.sheetOverlayShowing = false;
+    } else if (event.key === 'Escape' && this.reorderSelectedHashes.size) {
+      this.reorderSelectedHashes = new Set();
     } else if (event.key === 'Escape' && this.settingsButtons['showTags'].toggled) {
       this.toggleButton('showTags');
     } else if (event.key === 'Escape' && this.showTagColorPicker) {
@@ -1131,9 +1142,19 @@ export class HomeComponent implements OnInit, AfterViewInit {
       return;
     }
 
-    event.dataTransfer.setData('application/vha-reorder', item.hash);
+    // dragging one of several selected videos moves the whole selection
+    const group = this.reorderSelectedHashes.has(item.hash)
+      ? this.pipeSideEffectService.galleryShowing
+          .filter((el) => this.reorderSelectedHashes.has(el.hash))
+          .map((el) => el.hash)
+      : [];
+    this.reorderDragGroup = group.length > 1 ? new Set(group) : new Set();
+
+    // first line is the grabbed video; any further lines are the rest of the group
+    const payload = [item.hash, ...group.filter((hash) => hash !== item.hash)].join('\n');
+    event.dataTransfer.setData('application/vha-reorder', payload);
     // text/plain fallback — some Electron/Chromium builds only reliably expose text types
-    event.dataTransfer.setData('text/plain', 'vha-reorder:' + item.hash);
+    event.dataTransfer.setData('text/plain', 'vha-reorder:' + payload);
     event.dataTransfer.effectAllowed = 'move';
     this.reorderDragHash = item.hash;
     this.reorderDragClientY = event.clientY;
@@ -1181,6 +1202,45 @@ export class HomeComponent implements OnInit, AfterViewInit {
     this.reorderDragHash = null;
     this.reorderDragOverHash = null;
     this.reorderDragClientY = null;
+    this.reorderDragGroup = new Set();
+  }
+
+  /**
+   * Ctrl + Alt + Click: add / remove a video from the drag-reorder selection
+   */
+  private toggleReorderSelection(item: ImageElement): void {
+    if (item.cleanName === '*FOLDER*') {
+      return;
+    }
+
+    const next = new Set(this.reorderSelectedHashes);
+    if (next.has(item.hash)) {
+      next.delete(item.hash);
+    } else {
+      next.add(item.hash);
+    }
+    this.reorderSelectedHashes = next;
+  }
+
+  /**
+   * True when the video is part of a multi-selection that drag / move to top acts on
+   */
+  isReorderSelected(item: ImageElement): boolean {
+    return this.reorderSelectedHashes.has(item.hash) && this.isManualSortActive();
+  }
+
+  /**
+   * Selected videos the right-click "Move to top" acts on (only when the clicked one is selected)
+   */
+  reorderSelectionForRightClick(): ImageElement[] {
+    const clicked = this.currentRightClickedItem;
+    if (!clicked || !this.reorderSelectedHashes.has(clicked.hash) || this.reorderSelectedHashes.size < 2) {
+      return [];
+    }
+
+    return this.imageElementService.imageElements.filter(
+      (el) => this.reorderSelectedHashes.has(el.hash) && !el.deleted && el.cleanName !== '*FOLDER*'
+    );
   }
 
   /**
@@ -1237,20 +1297,20 @@ export class HomeComponent implements OnInit, AfterViewInit {
   }
 
   /**
-   * Read the dragged video hash from the drag payload (custom type or text fallback)
+   * Read the dragged video hashes from the drag payload (custom type or text fallback);
+   * the first hash is the grabbed video
    */
-  private getReorderDragHash(event: DragEvent): string {
-    const custom = event.dataTransfer.getData('application/vha-reorder');
-    if (custom) {
-      return custom;
+  private getReorderDragHashes(event: DragEvent): string[] {
+    let payload = event.dataTransfer.getData('application/vha-reorder');
+
+    if (!payload) {
+      const text = event.dataTransfer.getData('text/plain') || event.dataTransfer.getData('text') || '';
+      if (text.startsWith('vha-reorder:')) {
+        payload = text.slice('vha-reorder:'.length);
+      }
     }
 
-    const text = event.dataTransfer.getData('text/plain') || event.dataTransfer.getData('text') || '';
-    if (text.startsWith('vha-reorder:')) {
-      return text.slice('vha-reorder:'.length);
-    }
-
-    return '';
+    return payload ? payload.split('\n').filter(Boolean) : [];
   }
 
   /**
@@ -1260,10 +1320,10 @@ export class HomeComponent implements OnInit, AfterViewInit {
     event.preventDefault();
     event.stopPropagation();
 
-    const draggedHash = this.getReorderDragHash(event);
+    const draggedHashes = this.getReorderDragHashes(event);
     this.onReorderDragEnd();
 
-    if (!draggedHash) {
+    if (!draggedHashes.length) {
       this.droppedSomethingOverVideo(event, target);
       return;
     }
@@ -1273,10 +1333,17 @@ export class HomeComponent implements OnInit, AfterViewInit {
     }
 
     const gallery = this.pipeSideEffectService.galleryShowing;
-    const fromIndex = gallery.findIndex((el) => el.hash === draggedHash);
+    const fromIndex = gallery.findIndex((el) => el.hash === draggedHashes[0]);
     const toIndex = gallery.findIndex((el) => el.hash === target.hash);
 
     if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+      return;
+    }
+
+    if (draggedHashes.length > 1) {
+      // like a single drag: dropping lower lands after the target, higher lands before it
+      const updates = computeGroupReorderMtimes(gallery, new Set(draggedHashes), target.hash, fromIndex < toIndex);
+      this.sendMtimeUpdates(updates);
       return;
     }
 
@@ -1294,6 +1361,12 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
     const item = this.currentRightClickedItem;
     if (item.cleanName === '*FOLDER*') {
+      return;
+    }
+
+    const selection = this.reorderSelectionForRightClick();
+    if (selection.length > 1) {
+      this.sendMtimeUpdates(computeGroupMoveToTopMtimes(selection, this.imageElementService.imageElements));
       return;
     }
 
@@ -1624,6 +1697,20 @@ export class HomeComponent implements OnInit, AfterViewInit {
     if (this.batchTaggingMode) {
       this.tagBatchModeSelectionChangedTrigger = Date.now();
       item.selected = !item.selected;
+
+      return;
+    }
+
+    // ctrl + alt => toggle multi-select for drag-reorder / move to top
+    if (
+      eventObject.mouseEvent.ctrlKey === true
+      && eventObject.mouseEvent.altKey === true
+      && !eventObject.mouseEvent.shiftKey
+      && this.isManualSortActive()
+    ) {
+      if (!(eventObject.doubleClick || doubleClick)) {
+        this.toggleReorderSelection(item);
+      }
 
       return;
     }
