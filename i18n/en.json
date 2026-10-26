@@ -259,6 +259,7 @@
   },
   "RIGHTCLICK": {
     "cancelRename": "cancel rename",
+    "copyVideoId": "Copy video ID",
     "delete": "Delete",
     "deleteConfirm": "Delete \"{{name}}\"?\n\nThis removes the video from disk and this hub, and deletes its thumbnail, filmstrip, and preview clip.",
     "errorFileNameExists": "A file exists with this filename",

@@ -119,6 +119,7 @@
       >
                                                                 {{ 'RIGHTCLICK.openFolder'  | translate }}</li>
       <li (click)="openThumbnailSheet(currentRightClickedItem)">{{ 'RIGHTCLICK.sheetModal'  | translate }}</li>
+      <li (click)="copyVideoIdNow()">                           {{ 'RIGHTCLICK.copyVideoId' | translate }}</li>
       <li
         (click)="deleteThisFile(currentRightClickedItem)"
         class="right-click-delete"

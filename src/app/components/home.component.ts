@@ -2693,6 +2693,14 @@ export class HomeComponent implements OnInit, AfterViewInit {
     this.handleFolderWordClicked(this.currentRightClickedItem.partialPath);
   }
 
+  /**
+   * Handle right-click on file and `copy video ID`
+   * copies the video's hash (its id in the .vha file) to the clipboard
+   */
+  copyVideoIdNow(): void {
+    navigator.clipboard.writeText(this.currentRightClickedItem.hash);
+  }
+
   rightMouseClicked(event: PointerEvent, item: ImageElement): void {
     this.currentRightClickedItem = item;
 
