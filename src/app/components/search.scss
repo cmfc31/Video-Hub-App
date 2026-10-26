@@ -83,6 +83,60 @@
   }
 }
 
+.sidebar-shortcuts {
+  color: variables.$gray-60;
+  font-size: 11px;
+  margin-top: 30px;
+
+  summary {
+    color: variables.$gray-50;
+    cursor: pointer;
+    font-style: italic;
+    margin-bottom: 6px;
+    user-select: none;
+  }
+
+  ul {
+    margin: 0;
+    padding: 0;
+  }
+
+  li {
+    line-height: 1.3;
+    list-style: none;
+    margin-bottom: 7px;
+  }
+
+  .keys {
+    display: block;
+    color: variables.$gray-70;
+  }
+
+  kbd {
+    background: variables.$gray-05;
+    border: 1px solid variables.$gray-20;
+    border-radius: 3px;
+    color: variables.$gray-80;
+    font-family: monospace;
+    font-size: 10px;
+    padding: 0 3px;
+  }
+}
+
+.sidebar-shortcuts-dark {
+  color: variables.$gray-40;
+
+  .keys {
+    color: variables.$gray-30;
+  }
+
+  kbd {
+    background: variables.$gray-80;
+    border-color: variables.$gray-70;
+    color: variables.$gray-15;
+  }
+}
+
 .clear-all-filters {
   &:hover {
     cursor: not-allowed;

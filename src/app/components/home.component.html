@@ -787,6 +787,23 @@
         }
       </div>
 
+      <!-- Mouse & keyboard shortcuts cheat sheet -->
+      <details
+        class="sidebar-shortcuts"
+        [ngClass]="{ 'sidebar-shortcuts-dark': settingsButtons['darkMode'].toggled }"
+        open
+      >
+        <summary>{{ 'SIDEBAR.shortcutsTitle' | translate }}</summary>
+        <ul>
+          <li><span class="keys"><kbd>Shift</kbd>+<kbd>Click</kbd></span>{{ 'SIDEBAR.shortcutOpenFolder' | translate }}</li>
+          <li><span class="keys"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Click</kbd></span>{{ 'SIDEBAR.shortcutSetThumbnail' | translate }}</li>
+          <li><span class="keys"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Click</kbd></span>{{ 'SIDEBAR.shortcutMultiSelect' | translate }}</li>
+          @if (settingsButtons['spacePlaysRandom'].toggled) {
+            <li><span class="keys"><kbd>Ctrl</kbd>+<kbd>Space</kbd></span>{{ 'SIDEBAR.shortcutRandomVideo' | translate }}</li>
+          }
+        </ul>
+      </details>
+
       <!-- Recently opened -->
       <app-recently-opened-hubs
         (openFromHistory)="openFromHistory($event)"
