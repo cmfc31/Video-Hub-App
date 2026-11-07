@@ -6,13 +6,16 @@ const trash = require('trash');
 const exec = require('child_process').exec;
 
 import { GLOBALS } from './main-globals';
-import { ImageElement, FinalObject, InputSources } from '../interfaces/final-object.interface';
+import { ImageElement, FinalObject, InputSources, nextScreenshotShift } from '../interfaces/final-object.interface';
 import { SettingsObject } from '../interfaces/settings-object.interface';
 import { createDotPlsFile, writeVhaFileToDisk } from './main-support';
-import { imageAssetPath, replaceThumbnailWithNewImage, replaceThumbnailWithFilmstripFrame } from './main-extract';
+import { imageAssetPath, regenerateAssets, replaceThumbnailWithNewImage, replaceThumbnailWithFilmstripFrame } from './main-extract';
 import { closeWatcher, startWatcher, extractAnyMissingThumbs, removeThumbnailsNotInHub } from './main-extract-async';
 import { isImageConversionRunning } from './main-convert-images';
 import { ALL_IMAGE_EXTENSIONS } from '../interfaces/image-format.util';
+
+// videos whose assets are being regenerated right now
+const regeneratingHashes: Set<string> = new Set();
 
 /**
  * Set up the listeners
@@ -273,6 +276,42 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
       })
       .catch((err) => {});
 
+  });
+
+  /**
+   * Extract a new set of screenshots and preview clip at different times, replacing the current ones.
+   * Not during an image conversion, which is rewriting these same files.
+   */
+  ipc.on('regenerate-assets', (event, item: ImageElement) => {
+    if (regeneratingHashes.has(item.hash)) {
+      return;
+    }
+
+    if (isImageConversionRunning()) {
+      event.sender.send('assets-regenerate-failed');
+      return;
+    }
+
+    regeneratingHashes.add(item.hash);
+
+    const shift: number = nextScreenshotShift(item.screenshotShift);
+
+    regenerateAssets(
+      item,
+      GLOBALS.selectedSourceFolders[item.inputSource].path,
+      path.join(GLOBALS.selectedOutputFolder, 'vha-' + GLOBALS.hubName),
+      GLOBALS.screenshotSettings,
+      shift
+    )
+      .catch(() => false)
+      .then((success: boolean) => {
+        regeneratingHashes.delete(item.hash);
+        if (success) {
+          event.sender.send('assets-regenerated', item.hash, shift);
+        } else {
+          event.sender.send('assets-regenerate-failed');
+        }
+      });
   });
 
   /**

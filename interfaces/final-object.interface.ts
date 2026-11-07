@@ -53,6 +53,7 @@ export interface ImageElement {
   defaultScreen?: number;        // index of default screenshot to show
   notes?: string;                // any free-form notes a user may want to add to any video
   playlist?: number;             // timestamp of when user clicked `add to playlist`
+  screenshotShift?: number;      // set by `Regenerate assets`: how far filmstrip frames moved, as a fraction of the gap between frames
   tags?: string[];               // tags associated with this particular file
   year?: number;                 // optional tag to track the year of the video
   // ========================================================================
@@ -99,6 +100,26 @@ export function NewImageElement(): ImageElement {
     uuid: '',
     width: 0,
   };
+}
+
+/**
+ * Time in seconds of a filmstrip screenshot
+ * @param duration -- duration of the video
+ * @param screens  -- number of screenshots in the filmstrip
+ * @param index    -- index of the screenshot in the filmstrip (0-based)
+ * @param shift    -- the video's `screenshotShift`
+ */
+export function screenshotTime(duration: number, screens: number, index: number, shift = 0): number {
+  return duration / (screens + 1) * (index + 1 + shift); // +1 so we don't pick the 0th frame
+}
+
+/**
+ * The `screenshotShift` to use the next time a video's assets are regenerated.
+ * Stepping by 0.382 (golden ratio) keeps every new set of frames away from the previous ones;
+ * staying below 0.9 keeps the last frame clear of the very end of the video.
+ */
+export function nextScreenshotShift(current = 0): number {
+  return (current + 0.382) % 0.9;
 }
 
 export interface ScreenshotSettings {

@@ -91,7 +91,7 @@
         </div>
 
         <span class="time">
-          {{ (video().duration / (video().screens + 1)) * (i+1) | lengthPipe }}
+          {{ timeOfScreenshot(i) | lengthPipe }}
         </span>
 
       </div>

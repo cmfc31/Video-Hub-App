@@ -9,6 +9,7 @@ import { ImageElementService } from './../../services/image-element.service';
 import { ManualTagsService } from '../tags-manual/manual-tags.service';
 
 import type { StarRating, ImageElement } from '../../../../interfaces/final-object.interface';
+import { screenshotTime } from '../../../../interfaces/final-object.interface';
 import type { TagEmit, RenameFileResponse } from '../../../../interfaces/shared-interfaces';
 
 import { metaAppear, textAppear, modalAnimation } from '../../common/animations';
@@ -91,6 +92,11 @@ export class SheetComponent implements OnInit, OnChanges {
     this.pathToVideoFile = path.join(this.selectedSourceFolder(), video.partialPath, video.fileName);
     this.percentOffset = (100 / video.screens);
     this.starRatingHack = this.star();
+  }
+
+  timeOfScreenshot(index: number): number {
+    const video = this.video();
+    return screenshotTime(video.duration, video.screens, index, video.screenshotShift);
   }
 
   decreaseZoomLevel() {

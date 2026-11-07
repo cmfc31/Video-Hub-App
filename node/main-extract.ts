@@ -33,6 +33,7 @@ const ffprobePath = resolveSpawnableExecutablePath(require('@ffprobe-installer/f
 import { GLOBALS } from './main-globals';
 
 import type { ImageElement, ScreenshotSettings } from '../interfaces/final-object.interface';
+import { screenshotTime } from '../interfaces/final-object.interface';
 import type { ImageAssetFolder, ImageFormat } from '../interfaces/image-format.util';
 import { imageFileName, tileWidth } from '../interfaces/image-format.util';
 
@@ -46,6 +47,10 @@ const AVIF_CPU_USED = '6';
 
 // Approximate AVIF encode time per 1000px of output width -- used to extend the extraction timeouts.
 const AVIF_ENCODE_MS_PER_1000PX = 100;
+
+// Regenerating is one video the user is waiting on, not a batch to get through quickly,
+// so give ffmpeg longer than the import timeouts before assuming the file is corrupt.
+const REGENERATE_TIMEOUT_FACTOR = 3;
 
 // Browser-safe preview clip encoding (H.264 Main + AAC), higher quality than default web presets.
 const PREVIEW_CLIP_CRF = '20';
@@ -338,6 +343,8 @@ const extractSingleFrameArgs = (
  * @param screenshotHeight     -- height of screenshot in pixels
  * @param numberOfScreenshots  -- number of screenshots to extract
  * @param savePath             -- full path to file name and extension
+ * @param isHdr
+ * @param shift                -- the video's `screenshotShift`
  */
 const generateScreenshotStripArgs = (
   pathToVideo: string,
@@ -346,11 +353,11 @@ const generateScreenshotStripArgs = (
   numberOfScreenshots: number,
   savePath: string,
   isHdr: boolean,
+  shift = 0,
 ): string[] => {
 
   let current = 0;
   const totalCount = numberOfScreenshots;
-  const step: number = duration / (totalCount + 1);
   const args: string[] = [];
   let allFramesFiltered = '';
   let outputFrames = '';
@@ -362,7 +369,7 @@ const generateScreenshotStripArgs = (
 
   // make the magic filter
   while (current < totalCount) {
-    const time = (current + 1) * step; // +1 so we don't pick the 0th frame
+    const time: number = screenshotTime(duration, totalCount, current, shift);
     args.push('-ss', time.toString(), '-i', pathToVideo);
     allFramesFiltered += '[' + current + ':V]' + fancyScaleFilter + '[' + current + '];';
     outputFrames += '[' + current + ']';
@@ -388,6 +395,7 @@ const generateScreenshotStripArgs = (
  * @param clipSnippets  -- number of clip snippets to extract
  * @param snippetLength -- length in seconds of each snippet
  * @param savePath      -- full path to file name and extension
+ * @param shift         -- how far to move each snippet, as a fraction of the gap between snippets
  */
 const generatePreviewClipArgs = (
   pathToVideo: string,
@@ -399,6 +407,7 @@ const generatePreviewClipArgs = (
   hasAudio: boolean,
   preferAmdH264Encoder: boolean,
   isHdr: boolean,
+  shift = 0,
 ): string[] => {
 
   let current = 1;
@@ -410,7 +419,7 @@ const generatePreviewClipArgs = (
 
   // make the magic filter
   while (current <= totalCount) {
-    const time = current * step;
+    const time = (current + shift) * step;
     const preview_duration = snippetLength;
     args.push('-ss', time.toString(), '-t', preview_duration.toString(), '-i', pathToVideo);
     current++;
@@ -527,31 +536,23 @@ export function extractAll(
   done
 ): void {
 
-  const clipHeight:       number = screenshotSettings.clipHeight;        // -- number in px how tall each clip should be
   const clipSnippets:     number = screenshotSettings.clipSnippets;      // -- number of clip snippets to extract; 0 == do not extract clip
   const screenshotHeight: number = screenshotSettings.height;            // -- number in px how tall each screenshot should be
-  const snippetLength:    number = screenshotSettings.clipSnippetLength; // -- length of each snippet in the clip
 
   const pathToVideo: string = path.join(videoFolderPath, currentElement.partialPath, currentElement.fileName);
 
   const duration:     number = currentElement.duration;
   const fileHash:     string = currentElement.hash;
   const numOfScreens: number = currentElement.screens;
-  const sourceHeight: number = currentElement.height;
 
   const thumbnailSavePath: string = imageAssetPath(screenshotFolder, 'thumbnails', fileHash, numOfScreens, screenshotSettings);
   const filmstripSavePath: string = imageAssetPath(screenshotFolder, 'filmstrips', fileHash, numOfScreens, screenshotSettings);
   const clipSavePath:      string = path.normalize(screenshotFolder + '/clips/' +      fileHash + '.mp4');
   const clipThumbSavePath: string = imageAssetPath(screenshotFolder, 'clips',      fileHash, numOfScreens, screenshotSettings);
 
-  const maxRunTime: ExtractionDurations = setExtractionDurations(
-    sourceHeight, numOfScreens, screenshotHeight, clipSnippets, snippetLength, clipHeight
+  const maxRunTime: ExtractionDurations = extractionTimeouts(
+    currentElement, screenshotSettings, thumbnailSavePath, filmstripSavePath, clipThumbSavePath
   );
-
-  // AVIF encoding is slower than JPEG -- extend the timeouts so wide filmstrips are not killed
-  maxRunTime.thumb     += imageEncodeBudget(formatOfPath(thumbnailSavePath), tileWidth(screenshotHeight));
-  maxRunTime.filmstrip += imageEncodeBudget(formatOfPath(filmstripSavePath), tileWidth(screenshotHeight) * numOfScreens);
-  maxRunTime.clipThumb += imageEncodeBudget(formatOfPath(clipThumbSavePath), tileWidth(clipHeight));
 
   let sourceIsHdr = false;
 
@@ -601,7 +602,7 @@ export function extractAll(
       } else {
 
         const ffmpegArgs: string [] = generateScreenshotStripArgs(
-          pathToVideo, duration, screenshotHeight, numOfScreens, filmstripSavePath, sourceIsHdr
+          pathToVideo, duration, screenshotHeight, numOfScreens, filmstripSavePath, sourceIsHdr, currentElement.screenshotShift
         );
 
         return run_ffmpeg_with_decode_acceleration(ffmpegArgs, hdrTimeoutFactor(maxRunTime.filmstrip), 'filmstrip'); // (5)
@@ -624,34 +625,9 @@ export function extractAll(
       if (clipExists) {
         return true;
       } else {
-        return hasAudioStream(pathToVideo)
-          .then((sourceHasAudio: boolean) => {
-            const ffmpegArgs: string[] = generatePreviewClipArgs(
-              pathToVideo, duration, clipHeight, clipSnippets, snippetLength, clipSavePath, sourceHasAudio, false, sourceIsHdr
-            );
-
-            return getHardwareDecodeConfig()
-              .then((decodeConfig: HardwareDecodeConfig) => {
-                const acceleratedClipArgs = generatePreviewClipArgs(
-                  pathToVideo,
-                  duration,
-                  clipHeight,
-                  clipSnippets,
-                  snippetLength,
-                  clipSavePath,
-                  sourceHasAudio,
-                  decodeConfig.amdH264EncoderAvailable,
-                  sourceIsHdr
-                );
-
-                return run_ffmpeg_with_decode_acceleration(
-                  acceleratedClipArgs,
-                  hdrTimeoutFactor(maxRunTime.clip),
-                  'clip',
-                  ffmpegArgs
-                );
-              });
-          });
+        return extractClip(
+          pathToVideo, duration, screenshotSettings, clipSavePath, sourceIsHdr, hdrTimeoutFactor(maxRunTime.clip)
+        );
       }
 
     })
@@ -689,9 +665,207 @@ export function extractAll(
     });
 }
 
+/**
+ * Extract a new set of assets at different times, replacing the existing ones.
+ *
+ * Everything is written to temporary `.regen` files first and only swapped in once all
+ * of it succeeded, so a failed extraction leaves the video's current assets untouched.
+ * Any `.regen` file left behind by a crash is removed by the hub's unused-file cleanup.
+ *
+ * @param currentElement     -- ImageElement to regenerate assets for
+ * @param videoFolderPath    -- path to base folder where videos are
+ * @param screenshotFolder   -- path to folder where image files are saved
+ * @param screenshotSettings -- ScreenshotSettings object
+ * @param shift              -- the new `screenshotShift`
+ */
+export async function regenerateAssets(
+  currentElement: ImageElement,
+  videoFolderPath: string,
+  screenshotFolder: string,
+  screenshotSettings: ScreenshotSettings,
+  shift: number,
+): Promise<boolean> {
+
+  const pathToVideo: string = path.join(videoFolderPath, currentElement.partialPath, currentElement.fileName);
+
+  if (!await checkFileExists(pathToVideo)) {
+    return false;
+  }
+
+  const duration:     number = currentElement.duration;
+  const fileHash:     string = currentElement.hash;
+  const numOfScreens: number = currentElement.screens;
+  const height:       number = screenshotSettings.height;
+
+  const thumbnailPath: string = imageAssetPath(screenshotFolder, 'thumbnails', fileHash, numOfScreens, screenshotSettings);
+  const filmstripPath: string = imageAssetPath(screenshotFolder, 'filmstrips', fileHash, numOfScreens, screenshotSettings);
+  const clipPath:      string = path.normalize(screenshotFolder + '/clips/' + fileHash + '.mp4');
+  const clipThumbPath: string = imageAssetPath(screenshotFolder, 'clips',      fileHash, numOfScreens, screenshotSettings);
+
+  const tempThumbnail: string = regenTempPath(thumbnailPath);
+  const tempFilmstrip: string = regenTempPath(filmstripPath);
+  const tempClip:      string = regenTempPath(clipPath);
+  const tempClipThumb: string = regenTempPath(clipThumbPath);
+
+  const maxRunTime: ExtractionDurations = extractionTimeouts(
+    currentElement, screenshotSettings, thumbnailPath, filmstripPath, clipThumbPath
+  );
+
+  const isHdr: boolean = (await getVideoColorProfile(pathToVideo)).isHdr;
+
+  const timeout = (durationMs: number): number => durationMs * REGENERATE_TIMEOUT_FACTOR * (isHdr ? 2 : 1);
+
+  // the thumbnail is not tied to a filmstrip position, so it can move anywhere between 10% and 82% of the video
+  const thumbnailTime: number = duration * (0.1 + shift * 0.8);
+
+  const shouldExtractClip: boolean = screenshotSettings.clipSnippets > 0;
+
+  try {
+    const success: boolean =
+         await run_ffmpeg_with_decode_acceleration(
+           extractSingleFrameArgs(pathToVideo, height, duration, tempThumbnail, isHdr, thumbnailTime),
+           timeout(maxRunTime.thumb),
+           'regenerate thumb'
+         )
+      && await run_ffmpeg_with_decode_acceleration(
+           generateScreenshotStripArgs(pathToVideo, duration, height, numOfScreens, tempFilmstrip, isHdr, shift),
+           timeout(maxRunTime.filmstrip),
+           'regenerate filmstrip'
+         )
+      && (!shouldExtractClip || (
+           await extractClip(pathToVideo, duration, screenshotSettings, tempClip, isHdr, timeout(maxRunTime.clip), shift)
+        && await run_ffmpeg_with_decode_acceleration(
+             extractFirstFrameArgs(tempClip, tempClipThumb),
+             timeout(maxRunTime.clipThumb),
+             'regenerate clip thumb'
+           )
+         ));
+
+    if (!success) {
+      return false;
+    }
+
+    // the clip goes first: it is the file a <video> may still hold open, and if it stays locked nothing has changed yet
+    if (shouldExtractClip) {
+      await replaceFile(tempClip, clipPath);
+      await replaceFile(tempClipThumb, clipThumbPath);
+    }
+    await replaceFile(tempFilmstrip, filmstripPath);
+    await replaceFile(tempThumbnail, thumbnailPath);
+
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await Promise.all(
+      [tempThumbnail, tempFilmstrip, tempClip, tempClipThumb].map((file: string) => fs.promises.rm(file, { force: true }).catch(() => {}))
+    );
+  }
+}
+
 // ========================================================================================
 //         Helper methods
 // ========================================================================================
+
+/**
+ * Extract the preview clip
+ *
+ * @param pathToVideo        -- full path to the video file
+ * @param duration           -- duration of the original video file
+ * @param screenshotSettings -- ScreenshotSettings object
+ * @param savePath           -- full path to file name and extension
+ * @param isHdr
+ * @param maxRunningTime     -- maximum time to run ffmpeg
+ * @param shift              -- how far to move each snippet, as a fraction of the gap between snippets
+ */
+function extractClip(
+  pathToVideo: string,
+  duration: number,
+  screenshotSettings: ScreenshotSettings,
+  savePath: string,
+  isHdr: boolean,
+  maxRunningTime: number,
+  shift = 0,
+): Promise<boolean> {
+
+  const clipHeight:    number = screenshotSettings.clipHeight;        // -- number in px how tall each clip should be
+  const clipSnippets:  number = screenshotSettings.clipSnippets;      // -- number of clip snippets to extract
+  const snippetLength: number = screenshotSettings.clipSnippetLength; // -- length of each snippet in the clip
+
+  return hasAudioStream(pathToVideo)
+    .then((sourceHasAudio: boolean) => {
+      const clipArgs = (preferAmdH264Encoder: boolean): string[] => generatePreviewClipArgs(
+        pathToVideo, duration, clipHeight, clipSnippets, snippetLength, savePath, sourceHasAudio, preferAmdH264Encoder, isHdr, shift
+      );
+
+      return getHardwareDecodeConfig()
+        .then((decodeConfig: HardwareDecodeConfig) => {
+          return run_ffmpeg_with_decode_acceleration(
+            clipArgs(decodeConfig.amdH264EncoderAvailable),
+            maxRunningTime,
+            'clip',
+            clipArgs(false)
+          );
+        });
+    });
+}
+
+/**
+ * Path of the temporary file an asset is regenerated into, e.g. `abc123.jpg` => `abc123.regen.jpg`
+ * The extension stays last because ffmpeg picks the output format from it.
+ */
+function regenTempPath(assetPath: string): string {
+  const parsed = path.parse(assetPath);
+  return path.join(parsed.dir, parsed.name + '.regen' + parsed.ext);
+}
+
+/**
+ * Move `from` over `to`, retrying briefly -- Windows refuses while the file is still open
+ */
+async function replaceFile(from: string, to: string): Promise<void> {
+  for (let attemptsLeft = 5; ; attemptsLeft--) {
+    try {
+      return await fs.promises.rename(from, to);
+    } catch (err) {
+      if (attemptsLeft === 1) {
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+}
+
+/**
+ * The maximum running time per extraction type for a video, including image encode time
+ */
+function extractionTimeouts(
+  currentElement: ImageElement,
+  screenshotSettings: ScreenshotSettings,
+  thumbnailPath: string,
+  filmstripPath: string,
+  clipThumbPath: string,
+): ExtractionDurations {
+
+  const clipHeight:       number = screenshotSettings.clipHeight;
+  const numOfScreens:     number = currentElement.screens;
+  const screenshotHeight: number = screenshotSettings.height;
+
+  const maxRunTime: ExtractionDurations = setExtractionDurations(
+    currentElement.height,
+    numOfScreens,
+    screenshotHeight,
+    screenshotSettings.clipSnippets,
+    screenshotSettings.clipSnippetLength,
+    clipHeight
+  );
+
+  // AVIF encoding is slower than JPEG -- extend the timeouts so wide filmstrips are not killed
+  maxRunTime.thumb     += imageEncodeBudget(formatOfPath(thumbnailPath), tileWidth(screenshotHeight));
+  maxRunTime.filmstrip += imageEncodeBudget(formatOfPath(filmstripPath), tileWidth(screenshotHeight) * numOfScreens);
+  maxRunTime.clipThumb += imageEncodeBudget(formatOfPath(clipThumbPath), tileWidth(clipHeight));
+
+  return maxRunTime;
+}
 
 interface ExtractionDurations {
   thumb: number;

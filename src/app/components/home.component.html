@@ -91,6 +91,7 @@
     @rightClickAnimation
   >
     <ul @rightClickContentAnimation>
+      <li (click)="copyVideoIdNow()">                           {{ 'RIGHTCLICK.copyVideoId' | translate }}</li>
       <li (click)="updatePlaylist(currentRightClickedItem)">
         {{ currentRightClickedItem.playlist
             ? ('RIGHTCLICK.playlistRemove' | translate)
@@ -119,7 +120,11 @@
       >
                                                                 {{ 'RIGHTCLICK.openFolder'  | translate }}</li>
       <li (click)="openThumbnailSheet(currentRightClickedItem)">{{ 'RIGHTCLICK.sheetModal'  | translate }}</li>
-      <li (click)="copyVideoIdNow()">                           {{ 'RIGHTCLICK.copyVideoId' | translate }}</li>
+      <li
+        (click)="regenerateAssetsNow()"
+        [ngClass]="{ 'right-click-disabled': !sourceFolderService.sourceFolderConnected[currentRightClickedItem.inputSource] }"
+      >
+                                                                {{ 'RIGHTCLICK.regenerateAssets' | translate }}</li>
       <li
         (click)="deleteThisFile(currentRightClickedItem)"
         class="right-click-delete"

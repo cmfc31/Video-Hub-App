@@ -21,6 +21,9 @@ export class FilePathService {
   imageFormat: ImageFormat = 'jpg';
   screenshotHeight = 288;
 
+  // hash -> time its assets were last regenerated; those files changed on disk but kept their URLs
+  private regeneratedAt: Map<string, number> = new Map();
+
   constructor(
     public sourceFolderService: SourceFolderService,
   ) { }
@@ -35,14 +38,23 @@ export class FilePathService {
    * @param screens    - number of screenshots in the filmstrip -- needed for `filmstrips` (very wide ones stay `.jpg`)
    */
   createFilePath(folderPath: string, hubName: string, subfolder: ImageAssetFolder, hash: string, video?: boolean, screens = 0): string {
+    const cacheBuster: string = this.regeneratedAt.has(hash) ? '?' + this.regeneratedAt.get(hash) : '';
+
     return 'file://' + path.normalize(path.join(
       folderPath,
       'vha-' + hubName,
       subfolder,
       video ? hash + '.mp4' : imageFileName(hash, subfolder, this.imageFormat, screens, this.screenshotHeight)
     )).replace(/\\/g, '/')
-      .replace(/[ \(\)]/g, (match) => { return this.replaceMap[match]; });
+      .replace(/[ \(\)]/g, (match) => { return this.replaceMap[match]; }) + cacheBuster;
       //         ^^^^^ replace the ` ` (space) as well as parentheses `(` and `)` with URL encoding from the `replaceMap`
+  }
+
+  /**
+   * Make every path built from now on for this video's assets re-fetch the files from disk
+   */
+  markAssetsRegenerated(hash: string): void {
+    this.regeneratedAt.set(hash, Date.now());
   }
 
   /**

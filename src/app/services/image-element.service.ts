@@ -37,6 +37,25 @@ export class ImageElementService {
   }
 
   /**
+   * Record a video's regenerated assets.
+   * Swaps in a new object so every view showing the video rebuilds its media paths.
+   * @returns the updated element, undefined if the video is no longer in the hub
+   */
+  applyRegeneratedAssets(hash: string, screenshotShift: number): ImageElement | undefined {
+    const idx: number = this.imageElements.findIndex((element: ImageElement) => element.hash === hash && !element.deleted);
+
+    if (idx === -1) {
+      return undefined;
+    }
+
+    this.imageElements[idx] = { ...this.imageElements[idx], screenshotShift };
+
+    this.finalArrayNeedsSaving = true;
+    this.imageElements = this.imageElements.slice(); // new array so the gallery pipes pick up the new object
+    return this.imageElements[idx];
+  }
+
+  /**
    * Apply mtime updates to hub metadata and force the gallery pipe chain to re-evaluate
    */
   applyMtimeUpdates(updates: MtimeUpdate[]): void {

@@ -28,6 +28,7 @@ import { SortOrderComponent } from './sort-order/sort-order.component';
 // Interfaces
 import type { ContextMenuCoordinate } from '../../../interfaces/shared-interfaces';
 import type { FinalObject, ImageElement, ScreenshotSettings, ResolutionString } from '../../../interfaces/final-object.interface';
+import { screenshotTime } from '../../../interfaces/final-object.interface';
 import { isPartialPathUnderPrefix } from '../../../interfaces/novha.util';
 import { imageFileName, normalizeImageFormat } from '../../../interfaces/image-format.util';
 import { formatFileSize, refreshFileSizeDisplays } from '../../../interfaces/file-size.util';
@@ -679,6 +680,31 @@ export class HomeComponent implements OnInit, AfterViewInit {
       });
     });
 
+    // happens when a video's assets were regenerated and the new files are in place
+    (window as any).myElectron.receiveFromMain('assets-regenerated', (hash: string, screenshotShift: number) => {
+      (window as any).myElectron.clearCache();
+      this.zone.run(() => {
+        this.filePathService.markAssetsRegenerated(hash);
+
+        const updated = this.imageElementService.applyRegeneratedAssets(hash, screenshotShift);
+
+        if (updated && this.currentClickedItem?.hash === hash) {
+          this.updateCurrentClickedItem(updated);
+        }
+        if (updated && this.sheetItemToDisplay?.hash === hash) {
+          this.sheetItemToDisplay = updated;
+        }
+
+        this.modalService.openSnackbar(this.translate.instant('SETTINGS.assetsRegenerated'), 'success-snackbar');
+      });
+    });
+
+    (window as any).myElectron.receiveFromMain('assets-regenerate-failed', () => {
+      this.zone.run(() => {
+        this.modalService.openSnackbar(this.translate.instant('SETTINGS.assetsRegenerateFailed'), 'custom-snackbar', 5000);
+      });
+    });
+
     (window as any).myElectron.receiveFromMain('touchBar-to-app', (changesFromTouchBar: SettingsButtonKey | SupportedView) => {
       if (changesFromTouchBar) {
         this.toggleButton(changesFromTouchBar, true);
@@ -1104,6 +1130,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
     destination.tags        = origin.tags;
     destination.timesPlayed = origin.timesPlayed;
     destination.year        = origin.year;
+    destination.screenshotShift = origin.screenshotShift; // same hash, so same assets on disk
   }
 
   /**
@@ -1769,7 +1796,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
     if (this.appState.preferredVideoPlayer) {
       const time: number = clickedThumbnailIndex
-        ? item.duration / (item.screens + 1) * ((clickedThumbnailIndex) + 1)
+        ? screenshotTime(item.duration, item.screens, clickedThumbnailIndex, item.screenshotShift)
         : 0;
 
       const execPath: string = this.appState.preferredVideoPlayer;
@@ -2701,6 +2728,15 @@ export class HomeComponent implements OnInit, AfterViewInit {
     navigator.clipboard.writeText(this.currentRightClickedItem.hash);
   }
 
+  /**
+   * Handle right-click on file and `Regenerate assets`
+   * replaces the video's screenshots and preview clip with new ones taken at different times
+   */
+  regenerateAssetsNow(): void {
+    (window as any).myElectron.sendToMain('regenerate-assets', this.currentRightClickedItem);
+    this.modalService.openSnackbar(this.translate.instant('SETTINGS.assetsRegenerating'));
+  }
+
   rightMouseClicked(event: PointerEvent, item: ImageElement): void {
     this.currentRightClickedItem = item;
 
@@ -2713,7 +2749,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
     const clientY: number = event.clientY;
     const howFarFromBottom: number = winHeight - clientY;
 
-    const menuHeight = this.isManualSortActive() ? 240 : 210;
+    const menuHeight = this.isManualSortActive() ? 305 : 275;
     this.rightClickPosition.x = (howFarFromRight < 150) ? clientX - 150 + (howFarFromRight) : clientX;
     this.rightClickPosition.y = (howFarFromBottom < menuHeight) ? clientY - menuHeight + (howFarFromBottom) : clientY;
 
