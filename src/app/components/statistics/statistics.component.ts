@@ -14,6 +14,23 @@ import { normalizeImageFormat } from '../../../../interfaces/image-format.util';
 import type { ImportStage } from '../../../../node/main-support';
 import type { ImageConversionProgress } from '../../../../node/main-convert-images';
 import type { ImageAssetFolder } from '../../../../interfaces/image-format.util';
+import type { DriveLetterInfo } from '../../../../interfaces/shared-interfaces';
+import { driveLetterOf, withDriveLetter } from '../../../../interfaces/shared-interfaces';
+
+/** A drive letter the folders of a `HubDrive` can be switched to */
+export interface HubDriveOption {
+  letter: string;
+  current: boolean;   // the letter the folders use now
+  mounted: boolean;   // a drive with this letter is connected
+  found: number;      // how many of the drive's hub folders exist on this letter
+}
+
+/** One drive letter used by the hub's folders, and the letters it can be switched to */
+export interface HubDrive {
+  letter: string;     // current letter, e.g. `E`
+  folderCount: number; // hub folders on this drive
+  options: HubDriveOption[];
+}
 
 import { metaAppear, breadcrumbWordAppear } from '../../common/animations';
 
@@ -58,6 +75,7 @@ export class StatisticsComponent implements OnInit, OnDestroy {
 
   readonly cancelImageConversion = output<void>();
   readonly deleteInputSourceFiles = output<number>();
+  readonly driveLetterSwitched = output<void>();
   readonly finalArrayNeedsSaving = output<any>();
   readonly startServerOnPort = output<number>();
 
@@ -73,6 +91,7 @@ export class StatisticsComponent implements OnInit, OnDestroy {
 
   @Input() screenshotSettings: ScreenshotSettings;
 
+  readonly driveLetters = input<Observable<DriveLetterInfo[]>>();
   readonly inputFolderChosen = input<Observable<string>>();
   readonly numberScreenshotsDeleted = input<Observable<number>>();
   readonly oldFolderReconnected = input<Observable<{ source: number; path: string; }>>();
@@ -99,6 +118,10 @@ export class StatisticsComponent implements OnInit, OnDestroy {
   numberOfScreensDeleted = 0;
 
   removeFoldersMode = false;
+
+  // drive letters of the hub's folders (Windows) -- for quickly switching to another letter
+  hubDrives: HubDrive[] = [];
+  private mountedDrives: DriveLetterInfo[] = [];
 
   // format chosen in the "convert images" dropdown
   convertTargetFormat: ImageFormat = 'avif';
@@ -164,6 +187,16 @@ export class StatisticsComponent implements OnInit, OnDestroy {
         this.handleOldFolderReconnected(data.source, data.path);
       }
     }));
+
+    this.eventSubscriptionMap.set('driveLetters', this.driveLetters().subscribe((drives: DriveLetterInfo[]) => {
+      if (drives) { // first emit from subscription is `undefined`
+        this.mountedDrives = drives;
+        this.computeHubDrives();
+        this.cd.detectChanges();
+      }
+    }));
+    this.computeHubDrives();
+    this.refreshDriveLetters();
 
     this.eventSubscriptionMap.set('numberOfScreenshotsDeleted', this.numberScreenshotsDeleted().subscribe((deleted: number) => {
       if (deleted !== undefined) { // first emit from subscription is `undefined`
@@ -245,6 +278,7 @@ export class StatisticsComponent implements OnInit, OnDestroy {
     console.log(newPath);
     this.inputFolders()[sourceIndex] = { path: newPath, watch: false };
     this.sourceFolderService.sourceFolderConnected[sourceIndex] = true;
+    this.computeHubDrives();
     setTimeout(() => {
       this.cd.detectChanges();
     }, 1);
@@ -270,8 +304,11 @@ export class StatisticsComponent implements OnInit, OnDestroy {
       const nextIndex: number = this.pickNextIndex(this.inputFolders());
       this.inputFolders()[nextIndex] = { path: filePath, watch: false };
       this.sourceFolderService.sourceFolderConnected[nextIndex] = true;
-      (window as any).myElectron.sendToMain('start-watching-folder', nextIndex, filePath, false);
+      // `true` -- first scan of this folder: its videos keep their real dates (see `newVideosOnTop`)
+      (window as any).myElectron.sendToMain('start-watching-folder', nextIndex, filePath, false, true);
     }
+
+    this.computeHubDrives();
 
     this.cd.detectChanges();
 
@@ -431,6 +468,62 @@ export class StatisticsComponent implements OnInit, OnDestroy {
     (window as any).myElectron.sendToMain('choose-input');
   }
 
+  /**
+   * Ask Node which drive letters are mounted and which hub folders exist on each
+   */
+  refreshDriveLetters(): void {
+    const paths: string[] = Object.values(this.inputFolders() || {}).map((folder) => folder.path);
+    if (paths.some((folderPath: string) => driveLetterOf(folderPath))) {
+      (window as any).myElectron.sendToMain('get-drive-letters', paths);
+    }
+  }
+
+  /**
+   * Group the hub's folders by drive letter and list the letters each drive can be switched to
+   */
+  computeHubDrives(): void {
+    const folderPaths: string[] = Object.values(this.inputFolders() || {}).map((folder) => folder.path);
+    const letters: string[] = Array.from(new Set(folderPaths.map(driveLetterOf).filter(Boolean))).sort();
+
+    this.hubDrives = letters.map((letter: string): HubDrive => {
+      const onThisDrive = folderPaths.filter((folderPath: string) => driveLetterOf(folderPath) === letter);
+      const mounted = this.mountedDrives.some((drive) => drive.letter === letter);
+
+      const options: HubDriveOption[] = [{ letter, current: true, mounted, found: 0 }];
+
+      this.mountedDrives
+        .filter((drive) => drive.letter !== letter)
+        .forEach((drive) => {
+          options.push({
+            letter: drive.letter,
+            current: false,
+            mounted: true,
+            found: onThisDrive.filter((folderPath: string) => drive.found.includes(folderPath)).length,
+          });
+        });
+
+      return { letter, folderCount: onThisDrive.length, options };
+    });
+  }
+
+  /**
+   * Move every hub folder on drive `fromLetter` to drive `toLetter`, then reload the hub
+   */
+  switchDriveLetter(fromLetter: string, toLetter: string): void {
+    if (!toLetter || fromLetter === toLetter) {
+      return;
+    }
+
+    const inputFolders = this.inputFolders();
+    Object.keys(inputFolders).forEach((key: string) => {
+      if (driveLetterOf(inputFolders[key].path) === fromLetter) {
+        inputFolders[key].path = withDriveLetter(inputFolders[key].path, toLetter);
+      }
+    });
+
+    this.driveLetterSwitched.emit();
+  }
+
   reconnectThisFolder(itemSourceKey: number) {
     console.log('RECONNECT this folder:', itemSourceKey);
     (window as any).myElectron.sendToMain('reconnect-this-folder', itemSourceKey);
@@ -448,6 +541,7 @@ export class StatisticsComponent implements OnInit, OnDestroy {
     delete inputFolders[itemSourceKey];
     delete this.sourceFolderService.sourceFolderConnected[itemSourceKey];
     this.deleteInputSourceFiles.emit(itemSourceKey);
+    this.computeHubDrives();
   }
 
   /**

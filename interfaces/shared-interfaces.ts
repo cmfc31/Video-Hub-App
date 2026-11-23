@@ -85,3 +85,26 @@ export interface ContextMenuCoordinate {
   x: number;
   y: number;
 }
+
+/**
+ * A Windows drive letter the hub's folders could be switched to
+ */
+export interface DriveLetterInfo {
+  letter: string;       // uppercase, e.g. `E`
+  found: string[];      // hub folder paths (as saved in the hub) that exist when moved to this letter
+}
+
+/**
+ * Drive letter of a Windows path like `E:\Videos` -- uppercase, or `null` for any other path
+ */
+export function driveLetterOf(folderPath: string): string | null {
+  const match = /^([A-Za-z]):([\\/]|$)/.exec(folderPath || '');
+  return match ? match[1].toUpperCase() : null;
+}
+
+/**
+ * Same path on another drive letter: `E:\Videos` -> `F:\Videos`
+ */
+export function withDriveLetter(folderPath: string, letter: string): string {
+  return driveLetterOf(folderPath) ? letter.toUpperCase() + folderPath.substring(1) : folderPath;
+}

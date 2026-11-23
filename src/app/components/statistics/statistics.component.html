@@ -88,6 +88,37 @@
 
   </div> <!-- end of input-sources -->
 
+  @if (hubDrives.length) {
+    <div class="drive-letter-switch">
+    @for (drive of hubDrives; track drive.letter) {
+      <label
+        class="drive-letter-row"
+        title="{{ 'STATISTICS.driveLetterHint' | translate }}"
+      >
+        {{ 'STATISTICS.driveLetter' | translate }}
+        <select
+          class="drive-letter-select"
+          [ngModel]="drive.letter"
+          (ngModelChange)="switchDriveLetter(drive.letter, $event)"
+          (mouseenter)="refreshDriveLetters()"
+        >
+        @for (option of drive.options; track option.letter) {
+          <option [value]="option.letter">
+            {{ option.letter }}:
+            @if (option.current && !option.mounted) {
+              ({{ 'STATISTICS.notConnected' | translate }})
+            }
+            @if (!option.current && option.found) {
+              ({{ option.found }} / {{ drive.folderCount }} {{ 'STATISTICS.driveLetterFoldersFound' | translate }})
+            }
+          </option>
+        }
+        </select>
+      </label>
+    }
+    </div>
+  }
+
   <span class="edit-mode-container">
 
     <button

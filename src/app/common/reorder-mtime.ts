@@ -133,7 +133,42 @@ export function computeGroupMoveToTopMtimes(
     return [];
   }
 
-  const hashes = new Set(items.map((item) => item.hash));
+  const block = items.slice().sort((a, b) => b.mtime - a.mtime);
+  return computeGroupMoveToTopMtimesInOrder(block, allVideos);
+}
+
+/**
+ * Natural, case-insensitive file name order (like File Explorer): "Ep 2" comes before "Ep 10"
+ */
+const fileNameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+/**
+ * Stamp newly detected videos as the newest in the hub, as if they were just added to the drive
+ * one after another: sorting by Date modified (newest first) lists them on top in A-Z order.
+ */
+export function computeNewVideosMtimes(
+  newVideos: ImageElement[],
+  allVideos: ImageElement[]
+): MtimeUpdate[] {
+  const block = newVideos
+    .filter((video) => !video.deleted && video.cleanName !== '*FOLDER*')
+    .sort((a, b) => fileNameCollator.compare(a.fileName, b.fileName) || a.partialPath.localeCompare(b.partialPath));
+
+  if (!block.length) {
+    return [];
+  }
+
+  return computeGroupMoveToTopMtimesInOrder(block, allVideos);
+}
+
+/**
+ * Like `computeGroupMoveToTopMtimes` but keeps the given order (first item becomes the newest)
+ */
+function computeGroupMoveToTopMtimesInOrder(
+  block: ImageElement[],
+  allVideos: ImageElement[]
+): MtimeUpdate[] {
+  const hashes = new Set(block.map((item) => item.hash));
   let othersMax = Number.NEGATIVE_INFINITY;
 
   for (const video of allVideos) {
@@ -150,7 +185,6 @@ export function computeGroupMoveToTopMtimes(
     }
   }
 
-  const block = items.slice().sort((a, b) => b.mtime - a.mtime);
   const nowSec = Math.floor(Date.now() / SECOND_MS) * SECOND_MS;
   const top = Number.isFinite(othersMax)
     ? Math.max(nowSec, Math.floor(othersMax / SECOND_MS) * SECOND_MS + block.length * SECOND_MS)

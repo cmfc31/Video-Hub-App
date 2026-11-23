@@ -27,6 +27,7 @@ import {
 
 export interface TempMetadataQueueObject {
   fullPath: string;
+  initialScan: boolean; // found during the first scan of a new hub or a newly added folder
   inputSource: number;
   name: string;
   partialPath: string;
@@ -58,6 +59,10 @@ let numberOfThumbsDeleted = 0;
 // Size is compared on rescan so an in-place replacement is re-imported.
 let alreadyInAngular: Map<string, number> = new Map();
 const queuedForReimport: Set<string> = new Set();
+
+// Sources whose first scan is running (new hub or newly added folder).
+// Videos found there are not "new videos" for Angular -- they keep their real dates.
+const initialScanSources: Set<number> = new Set();
 
 // These two are together:
 const watcherMap:       Map<number, FSWatcher> = new Map();
@@ -180,7 +185,7 @@ function thumbQueueRunner(element: ImageElement, done): void {
  * Send element back to Angular; if any screenshots missing, queue it for extraction
  * @param imageElement
  */
-function sendNewVideoMetadata(imageElement: ImageElementPlus): void {
+function sendNewVideoMetadata(imageElement: ImageElementPlus, initialScan: boolean): void {
 
   if (isUnderNovha(sourceRootFor(imageElement.inputSource), imageElement.fullPath)) {
     queuedForReimport.delete(imageElement.fullPath);
@@ -193,7 +198,7 @@ function sendNewVideoMetadata(imageElement: ImageElementPlus): void {
   delete imageElement.fullPath; // downgrade to `ImageElement` from `ImageElementPlus`
 
   const elementForAngular = insertTemporaryFieldsSingle(imageElement);
-  GLOBALS.angularApp.sender.send('new-video-meta', elementForAngular);
+  GLOBALS.angularApp.sender.send('new-video-meta', elementForAngular, initialScan);
 
   if (thumbExtractionStartTime === 0) {
     thumbExtractionStartTime = performance.now();
@@ -237,7 +242,7 @@ export function metadataQueueRunner(file: TempMetadataQueueObject, done): void {
       imageElement.fullPath = file.fullPath; // insert this converting `ImageElement` to `ImageElementPlus`
       imageElement.inputSource = file.inputSource;
       imageElement.partialPath = file.partialPath;
-      sendNewVideoMetadata(imageElement);
+      sendNewVideoMetadata(imageElement, file.initialScan);
       done();
     }, () => {
       queuedForReimport.delete(file.fullPath);
@@ -265,6 +270,7 @@ function superFastSystemScan(inputDir: string, inputSource: number): void {
     dropTrackedPathsUnderFolder(inputSource, inputDir);
     GLOBALS.angularApp.sender.send('exclude-folder-from-hub', inputSource, '');
     GLOBALS.angularApp.sender.send('all-files-found-in-dir', inputSource, allFoundFilesMap.get(inputSource));
+    initialScanSources.delete(inputSource);
     metadataQueue.resume();
     return;
   }
@@ -284,6 +290,7 @@ function superFastSystemScan(inputDir: string, inputSource: number): void {
     // =============================================================================================
 
     enqueueFoundVideoFiles(inputDir, inputSource, files);
+    initialScanSources.delete(inputSource); // later finds in this source are new videos
 
     GLOBALS.angularApp.sender.send('all-files-found-in-dir', inputSource, allFoundFilesMap.get(inputSource));
 
@@ -389,6 +396,7 @@ export function startFileSystemWatching(inputDir: string, inputSource: number, p
     .on('ready', () => {
       console.log('Finished scanning', inputSource);
 
+      initialScanSources.delete(inputSource); // later finds in this source are new videos
       metadataQueue.resume();
 
       GLOBALS.angularApp.sender.send('all-files-found-in-dir', inputSource, allFoundFilesMap.get(inputSource));
@@ -420,6 +428,7 @@ export function resetWatchers(finalArray: ImageElement[]): void {
 
   alreadyInAngular = new Map();
   queuedForReimport.clear();
+  initialScanSources.clear();
 
   allFoundFilesMap = new Map();
 
@@ -466,10 +475,20 @@ function queueVideoIfNeeded(
 
   metadataQueue.push({
     fullPath: fullPath,
+    initialScan: initialScanSources.has(inputSource),
     inputSource: inputSource,
     name: name,
     partialPath: partialPath,
   });
+}
+
+/**
+ * Mark the next scan of this source as its first one (new hub or newly added folder)
+ * so the videos it finds are not reported to Angular as new videos
+ * @param inputSource
+ */
+export function markInitialScan(inputSource: number): void {
+  initialScanSources.add(inputSource);
 }
 
 /**

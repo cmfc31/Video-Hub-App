@@ -279,6 +279,7 @@
       <app-statistics
         (cancelImageConversion)="cancelImageConversion()"
         (deleteInputSourceFiles)="deleteInputSourceFiles($event)"
+        (driveLetterSwitched)="reloadHubWithNewFolderPaths()"
         (finalArrayNeedsSaving)="imageElementService.finalArrayNeedsSaving = true"
         (startServerOnPort)="startServer($event)"
 
@@ -293,6 +294,7 @@
         [pathToVhaFile]="appState.currentVhaFile"
         [screenshotSettings]="currentScreenshotSettings"
 
+        [driveLetters]="driveLettersBehaviorSubject.asObservable()"
         [inputFolderChosen]="inputSorceChosenBehaviorSubject.asObservable()"
         [numberScreenshotsDeleted]="numberScreenshotsDeletedBehaviorSubject.asObservable()"
         [oldFolderReconnected]="oldFolderReconnectedBehaviorSubject.asObservable()"

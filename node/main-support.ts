@@ -22,7 +22,7 @@ import type { Stats } from 'fs';
 import type { FinalObject, ImageElement, ScreenshotSettings, InputSources, ResolutionString } from '../interfaces/final-object.interface';
 import { NewImageElement } from '../interfaces/final-object.interface';
 import { formatFileSize } from '../interfaces/file-size.util';
-import { startFileSystemWatching, resetWatchers, sweepNovhaForSource } from './main-extract-async';
+import { startFileSystemWatching, resetWatchers, sweepNovhaForSource, markInitialScan } from './main-extract-async';
 
 interface ResolutionMeta {
   label: ResolutionString;
@@ -638,6 +638,10 @@ export function setUpDirectoryWatchers(inputDirs: InputSources, currentImages: I
             console.log('FIRST SCAN');
           } else {
             console.log('PERSISTENT WATCHING !!!');
+          }
+
+          if (currentImages.length === 0) {
+            markInitialScan(parseInt(key, 10)); // a brand new hub: its videos are not "new videos"
           }
 
           startFileSystemWatching(pathToDir, parseInt(key, 10), shouldWatch);

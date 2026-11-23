@@ -34,6 +34,7 @@ export type SettingsButtonKey = 'autoFileTags'
  | 'makeLarger'
  | 'makeSmaller'
  | 'manualTags'
+ | 'newVideosOnTop'
  | 'metaShowDuration'
  | 'metaShowSize'
  | 'metaShowResolution'
@@ -226,6 +227,7 @@ export const SettingsButtonsGroups: SettingsButtonKey[][] = [
     'dangerousDelete',
     'spacePlaysRandom',
     'openAtTimestamp',
+    'newVideosOnTop',
   ],
   [ // 15 - hack - to help save the properties into settings
     //           - hidden by not being included below in `SettingsMetaGrop`
@@ -602,6 +604,13 @@ export const SettingsButtons: SettingsButtonsType = {
     iconName: 'icon-mute-clips',
     settingsHeading: 'SETTINGS.clipsHeading',
     title: 'BUTTONS.muteClipsHint',
+    toggled: true
+  },
+  'newVideosOnTop': {
+    description: 'BUTTONS.newVideosOnTopDescription',
+    hidden: true,
+    moreInfo: 'BUTTONS.newVideosOnTopMoreInfo',
+    title: 'BUTTONS.newVideosOnTop',
     toggled: true
   },
   'openAtTimestamp': {

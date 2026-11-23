@@ -276,6 +276,27 @@
   position: relative;
 }
 
+.drive-letter-switch {
+  color: variables.$gray-70;
+  font-size: 12px;
+  margin-top: 10px;
+  text-align: center;
+
+  .drive-letter-row {
+    display: inline-block;
+    margin: 0 8px;
+  }
+
+  .drive-letter-select {
+    background-color: variables.$gray-10;
+    border: 0;
+    cursor: pointer;
+    font-family: monospace;
+    margin-left: 6px;
+    outline: none;
+  }
+}
+
 .watch-folder-note {
   display: block;
   left: -52px;

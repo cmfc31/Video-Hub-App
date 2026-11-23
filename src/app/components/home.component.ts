@@ -40,6 +40,7 @@ import type { RemoteSettings, SettingsButtonSavedProperties, SettingsObject } fr
 import type { SortType } from '../pipes/sorting.pipe';
 import type { WizardOptions } from '../../../interfaces/wizard-options.interface';
 import type {
+  DriveLetterInfo,
   HistoryItem,
   RemoteVideoClick,
   RenameFileResponse,
@@ -54,6 +55,7 @@ import {
   computeGroupMoveToTopMtimes,
   computeGroupReorderMtimes,
   computeMoveToTopMtime,
+  computeNewVideosMtimes,
   computeReorderMtimes,
 } from '../common/reorder-mtime';
 import type { MtimeUpdate } from '../common/reorder-mtime';
@@ -364,14 +366,19 @@ export class HomeComponent implements OnInit, AfterViewInit {
   reorderSelectedHashes: Set<string> = new Set();
   /** Hashes being dragged as a group (empty for a single-video drag) */
   reorderDragGroup: Set<string> = new Set();
-  /** Pending mtime updates waiting for IPC confirmation */
-  private pendingMtimeUpdates: MtimeUpdate[] = [];
+  /** Batches of mtime updates waiting for IPC confirmation (Node answers them in order) */
+  private pendingMtimeUpdates: { updates: MtimeUpdate[], silent: boolean }[] = [];
+  /** Newly detected videos waiting to be stamped as the newest (`newVideosOnTop` setting) */
+  private newVideosToStamp: ImageElement[] = [];
+  private newVideosStampTimeout = null;
+  private lastNewVideoArrival = 0;
   /** Last pointer Y during reorder drag (for edge auto-scroll) */
   private reorderDragClientY: number = null;
   private reorderAutoScrollRaf: number = null;
 
   // Behavior Subjects for IPC events:
 
+  driveLettersBehaviorSubject: BehaviorSubject<DriveLetterInfo[]> = new BehaviorSubject(undefined);
   inputSorceChosenBehaviorSubject: BehaviorSubject<string> = new BehaviorSubject(undefined);
   numberScreenshotsDeletedBehaviorSubject: BehaviorSubject<number> = new BehaviorSubject(undefined);
   oldFolderReconnectedBehaviorSubject: BehaviorSubject<{source: number, path: string}> = new BehaviorSubject(undefined);
@@ -544,6 +551,13 @@ export class HomeComponent implements OnInit, AfterViewInit {
         });
       }
     );
+
+    // Drive letters available for switching the hub's folders to (Windows only)
+    (window as any).myElectron.receiveFromMain('drive-letters-returning', (drives: DriveLetterInfo[]) => {
+      this.zone.run(() => {
+        this.driveLettersBehaviorSubject.next(drives);
+      });
+    });
 
     // when `remote-control` requests to open video
     (window as any).myElectron.receiveFromMain('remote-open-video', (video: RemoteVideoClick) => {
@@ -879,6 +893,10 @@ export class HomeComponent implements OnInit, AfterViewInit {
       this.sourceFolderService.selectedSourceFolder = finalObject.inputDirs;
       this.sourceFolderService.resetConnected();
 
+      // videos waiting to be stamped belong to the previous hub
+      clearTimeout(this.newVideosStampTimeout);
+      this.newVideosToStamp = [];
+
       // Update history of opened files
       this.updateVhaFileHistory(pathToFile, finalObject.hubName);
 
@@ -994,7 +1012,8 @@ export class HomeComponent implements OnInit, AfterViewInit {
     });
 
     // gets called for every element that node extracted metadata for (screenshots not yet extracted)
-    (window as any).myElectron.receiveFromMain('new-video-meta', (element: ImageElement) => {
+    // `initialScan` is true for videos found by the first scan of a new hub or a newly added folder
+    (window as any).myElectron.receiveFromMain('new-video-meta', (element: ImageElement, initialScan?: boolean) => {
 
       // if this video was just renamed from within the app do not add the element, skip it
       if (   this.lastRenamedFileHack // undefined unless file recently renamed
@@ -1010,6 +1029,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
       // if the element is part of any of the deleted videos, copy over the metadata into it !
       // important for when user renames a folder for example
+      let movedOrRenamed = false;
       this.imageElementService.imageElements
         .filter((currentElements: ImageElement) => {
           return currentElements.deleted;
@@ -1017,6 +1037,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
         .forEach((deletedElement: ImageElement) => {
           if (deletedElement.hash === element.hash) {
             this.copyMetaProperties(element, deletedElement);
+            movedOrRenamed = true;
           }
         });
 
@@ -1031,6 +1052,10 @@ export class HomeComponent implements OnInit, AfterViewInit {
         this.imageElementService.imageElements.push(element); // not enough for view to update; we need `.slice()`
         this.imageElementService.finalArrayNeedsSaving = true;
         this.debounceImport();
+
+        if (!initialScan && !movedOrRenamed && this.settingsButtons['newVideosOnTop'].toggled) {
+          this.queueNewVideoStamp(element);
+        }
       }
     });
 
@@ -1406,21 +1431,62 @@ export class HomeComponent implements OnInit, AfterViewInit {
   }
 
   /**
-   * Persist mtime updates on disk, then wait for Node to confirm before updating the hub
+   * Collect newly detected videos, then stamp them all at once as the newest videos
+   * so that they show up on top (A-Z) when sorting by Date modified
    */
-  private sendMtimeUpdates(updates: MtimeUpdate[]): void {
+  private queueNewVideoStamp(element: ImageElement): void {
+    this.newVideosToStamp.push(element);
+    this.lastNewVideoArrival = Date.now();
+
+    clearTimeout(this.newVideosStampTimeout);
+    this.newVideosStampTimeout = setTimeout(() => this.flushNewVideoStamps(), 3000);
+  }
+
+  /**
+   * Stamp the collected new videos -- waits while metadata of more videos is still being extracted
+   * so that one batch of copied videos stays together in A-Z order
+   */
+  private flushNewVideoStamps(): void {
+    const stillImporting = this.importStage === 'importingMeta'
+      && Date.now() - this.lastNewVideoArrival < 30000;
+
+    if (stillImporting) {
+      this.newVideosStampTimeout = setTimeout(() => this.flushNewVideoStamps(), 3000);
+      return;
+    }
+
+    const batch = this.newVideosToStamp;
+    this.newVideosToStamp = [];
+
+    if (!this.settingsButtons['newVideosOnTop'].toggled) {
+      return;
+    }
+
+    const updates = computeNewVideosMtimes(batch, this.imageElementService.imageElements)
+      .filter((update) => this.sourceFolderService.sourceFolderConnected[update.element.inputSource]);
+
+    this.sendMtimeUpdates(updates, true);
+  }
+
+  /**
+   * Persist mtime updates on disk, then wait for Node to confirm before updating the hub
+   * @param silent -- do not notify the user about failures (automatic updates)
+   */
+  private sendMtimeUpdates(updates: MtimeUpdate[], silent = false): void {
     if (!updates.length) {
       return;
     }
 
     for (const update of updates) {
       if (!this.sourceFolderService.sourceFolderConnected[update.element.inputSource]) {
-        this.modalService.openSnackbar(this.translate.instant('SETTINGS.rootFolderNotLive'));
+        if (!silent) {
+          this.modalService.openSnackbar(this.translate.instant('SETTINGS.rootFolderNotLive'));
+        }
         return;
       }
     }
 
-    this.pendingMtimeUpdates = updates;
+    this.pendingMtimeUpdates.push({ updates, silent });
 
     const payload = updates.map((update) => ({
       fullPath: this.filePathService.getPathFromImageElement(update.element),
@@ -1434,12 +1500,13 @@ export class HomeComponent implements OnInit, AfterViewInit {
    * Apply hub mtime updates for files that Node successfully touched
    */
   private handleMtimeUpdateResponse(results: { fullPath: string, success: boolean }[]): void {
-    const pending = this.pendingMtimeUpdates;
-    this.pendingMtimeUpdates = [];
+    const batch = this.pendingMtimeUpdates.shift();
 
-    if (!pending.length) {
+    if (!batch || !batch.updates.length) {
       return;
     }
+
+    const pending = batch.updates;
 
     const successByPath = new Map(
       (results || []).map((result) => [result.fullPath, result.success])
@@ -1463,7 +1530,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
       this.cd.detectChanges();
     }
 
-    if (anyFailed) {
+    if (anyFailed && !batch.silent) {
       this.modalService.openSnackbar(this.translate.instant('SETTINGS.fileNotFound'));
     }
   }
@@ -1625,6 +1692,15 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
   public loadThisVhaFile(fullPath: string): void {
     (window as any).myElectron.sendToMain('load-this-vha-file', fullPath, this.getFinalObjectForSaving());
+  }
+
+  /**
+   * Save the hub and open it again so Node scans and watches the folders at their new paths
+   * (after the drive letter of the hub's folders was switched)
+   */
+  public reloadHubWithNewFolderPaths(): void {
+    this.imageElementService.finalArrayNeedsSaving = true;
+    this.loadThisVhaFile(this.appState.currentVhaFile);
   }
 
   public loadFromFile(): void {

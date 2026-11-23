@@ -10,9 +10,11 @@ import { ImageElement, FinalObject, InputSources, nextScreenshotShift } from '..
 import { SettingsObject } from '../interfaces/settings-object.interface';
 import { createDotPlsFile, writeVhaFileToDisk } from './main-support';
 import { imageAssetPath, regenerateAssets, replaceThumbnailWithNewImage, replaceThumbnailWithFilmstripFrame } from './main-extract';
-import { closeWatcher, startWatcher, extractAnyMissingThumbs, removeThumbnailsNotInHub } from './main-extract-async';
+import { closeWatcher, startWatcher, extractAnyMissingThumbs, removeThumbnailsNotInHub, markInitialScan } from './main-extract-async';
 import { isImageConversionRunning } from './main-convert-images';
 import { ALL_IMAGE_EXTENSIONS } from '../interfaces/image-format.util';
+import { driveLetterOf, withDriveLetter } from '../interfaces/shared-interfaces';
+import type { DriveLetterInfo } from '../interfaces/shared-interfaces';
 
 // videos whose assets are being regenerated right now
 const regeneratingHashes: Set<string> = new Set();
@@ -353,11 +355,15 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
   });
 
   /**
-   * Stop watching a particular folder
+   * Start watching (or scan once) a particular folder
+   * `initialScan` is true when the folder was just added to the hub
    */
-  ipc.on('start-watching-folder', (event, watchedFolderIndex: string, path2: string, persistent: boolean) => {
+  ipc.on('start-watching-folder', (event, watchedFolderIndex: string, path2: string, persistent: boolean, initialScan?: boolean) => {
     // annoyingly it's not a number :     ^^^^^^^^^^^^^^^^^^ -- because object keys are strings :(
     console.log('start watching:', watchedFolderIndex, path2, persistent);
+    if (initialScan) {
+      markInitialScan(parseInt(watchedFolderIndex, 10));
+    }
     startWatcher(parseInt(watchedFolderIndex, 10), path2, persistent);
   });
 
@@ -389,6 +395,35 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
     // !! ^^^^^^^^^^^^^^^^^^^^^^ - make sure this points to the folder with screenshots only!
     const allHashes = getLiveVideoHashes(finalArray);
     removeThumbnailsNotInHub(allHashes, screenshotOutputFolder, !isImageConversionRunning()); // WARNING !!! this function will delete stuff
+  });
+
+  /**
+   * List the drive letters currently mounted (Windows only) and which hub folders exist on each
+   * Used to quickly switch the drive letter of the hub's folders when Windows assigned another one
+   */
+  ipc.on('get-drive-letters', (event, folderPaths: string[]) => {
+    const drives: DriveLetterInfo[] = [];
+
+    if (process.platform === 'win32') {
+      const windowsPaths = (folderPaths || []).filter((folderPath: string) => driveLetterOf(folderPath));
+
+      for (let code = 65; code <= 90; code++) { // A - Z
+        const letter = String.fromCharCode(code);
+        try {
+          if (!fs.existsSync(letter + ':\\')) {
+            continue;
+          }
+        } catch {
+          continue;
+        }
+        drives.push({
+          letter,
+          found: windowsPaths.filter((folderPath: string) => fs.existsSync(withDriveLetter(folderPath, letter))),
+        });
+      }
+    }
+
+    event.sender.send('drive-letters-returning', drives);
   });
 
   /**
