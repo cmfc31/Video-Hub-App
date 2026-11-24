@@ -220,14 +220,14 @@ export const SettingsButtonsGroups: SettingsButtonKey[][] = [
   ],
   [ // 14 - Create a new hub ---------------------------- 3rd tab
     'startWizard',
-    'binaryFileSize',
-    'resetSettings', // Various settings
+    'binaryFileSize', // Various settings
+    'newVideosOnTop',
+    'resetSettings',
     'clearHistory',
     'showDeleteOption',
     'dangerousDelete',
     'spacePlaysRandom',
     'openAtTimestamp',
-    'newVideosOnTop',
   ],
   [ // 15 - hack - to help save the properties into settings
     //           - hidden by not being included below in `SettingsMetaGrop`

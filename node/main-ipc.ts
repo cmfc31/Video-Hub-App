@@ -449,22 +449,25 @@ export function setUpIpcMessages(ipc, win, pathToAppData, systemMessages) {
     event,
     updates: { fullPath: string, mtimeMs: number }[]
   ): void => {
-    const results: { fullPath: string, success: boolean }[] = [];
+    const results: { fullPath: string, success: boolean, mtimeMs?: number }[] = [];
 
     (updates || []).forEach((update) => {
       let success = true;
+      let mtimeMs: number;
       try {
         if (!fs.existsSync(update.fullPath)) {
           success = false;
         } else {
           const date = new Date(update.mtimeMs);
           fs.utimesSync(update.fullPath, date, date);
+          // the drive may round the time (FAT / exFAT keep 2-second steps): report what it really stored
+          mtimeMs = Math.round(fs.statSync(update.fullPath).mtimeMs);
         }
       } catch (err) {
         console.log('Failed to update mtime for', update.fullPath, err);
         success = false;
       }
-      results.push({ fullPath: update.fullPath, success });
+      results.push({ fullPath: update.fullPath, success, mtimeMs });
     });
 
     event.sender.send('update-video-mtimes-response', results);

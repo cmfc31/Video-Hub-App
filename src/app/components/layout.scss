@@ -194,6 +194,15 @@
   outline-offset: -3px;
 }
 
+// drag-to-select rectangle
+.marquee-select {
+  background-color: rgba(61, 139, 253, 0.15);
+  border: 1px solid #3d8bfd;
+  pointer-events: none;
+  position: fixed;
+  z-index: 50;
+}
+
 .bottom-of-scroller-spacer {
   height: 160px;
 }

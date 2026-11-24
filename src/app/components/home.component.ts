@@ -57,6 +57,7 @@ import {
   computeMoveToTopMtime,
   computeNewVideosMtimes,
   computeReorderMtimes,
+  computeSortSelectionMtimes,
 } from '../common/reorder-mtime';
 import type { MtimeUpdate } from '../common/reorder-mtime';
 
@@ -366,6 +367,19 @@ export class HomeComponent implements OnInit, AfterViewInit {
   reorderSelectedHashes: Set<string> = new Set();
   /** Hashes being dragged as a group (empty for a single-video drag) */
   reorderDragGroup: Set<string> = new Set();
+  /** Drag-to-select rectangle to draw (screen coordinates), `null` when not dragging */
+  marqueeRect: { left: number; top: number; width: number; height: number } = null;
+  private marquee: {
+    startX: number;
+    startYContent: number;  // start Y in gallery-content coordinates, so it stays put while scrolling
+    lastX: number;
+    lastY: number;
+    additive: boolean;      // Ctrl held: add to the selection instead of replacing it
+    base: Set<string>;      // selection before the drag started
+    hits: Set<string>;      // videos inside the rectangle (kept while they are scrolled out of view)
+    active: boolean;        // moved far enough to count as a drag (otherwise it is a click)
+    raf: number;
+  } = null;
   /** Batches of mtime updates waiting for IPC confirmation (Node answers them in order) */
   private pendingMtimeUpdates: { updates: MtimeUpdate[], silent: boolean }[] = [];
   /** Newly detected videos waiting to be stamped as the newest (`newVideosOnTop` setting) */
@@ -545,7 +559,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
     // After Node finishes updating filesystem mtimes for drag-reorder
     (window as any).myElectron.receiveFromMain(
       'update-video-mtimes-response',
-      (results: { fullPath: string, success: boolean }[]) => {
+      (results: { fullPath: string, success: boolean, mtimeMs?: number }[]) => {
         this.zone.run(() => {
           this.handleMtimeUpdateResponse(results);
         });
@@ -1120,6 +1134,12 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
     const replaced = this.imageElementService.replaceExistingVideo(existing, incoming);
 
+    // A file that changed size since it was found (e.g. it was still downloading, or it was replaced)
+    // took the drive's new Date modified: stamp it as new again so it stays on top in A-Z order
+    if (this.settingsButtons['newVideosOnTop'].toggled) {
+      this.queueNewVideoStamp(replaced);
+    }
+
     if (this.currentClickedItem
         && this.currentClickedItem.inputSource === existing.inputSource
         && this.currentClickedItem.partialPath === existing.partialPath
@@ -1295,6 +1315,191 @@ export class HomeComponent implements OnInit, AfterViewInit {
     );
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // Drag-to-select: drag a rectangle from an empty spot of the gallery (or Ctrl + Alt + drag from
+  // anywhere) to select every video it touches. Ctrl keeps the current selection and adds to it.
+  // ---------------------------------------------------------------------------------------------
+
+  onGalleryMouseDown(event: MouseEvent): void {
+    if (event.button !== 0 || !this.isManualSortActive() || this.marquee) {
+      return;
+    }
+
+    const scrollEl = document.getElementById('scrollDiv');
+    const target = event.target as HTMLElement;
+    if (!scrollEl || !target || target.closest('input, textarea, select, button, a')) {
+      return;
+    }
+
+    const rect = scrollEl.getBoundingClientRect();
+    if (event.clientX >= rect.left + scrollEl.clientWidth) {
+      return; // on the scrollbar
+    }
+
+    const ctrlAlt = event.ctrlKey && event.altKey;
+    if (target.closest('[data-vha-hash]') && !ctrlAlt) {
+      return; // on a video: regular click / drag-reorder
+    }
+
+    event.preventDefault(); // no native drag or text selection
+
+    const additive = event.ctrlKey;
+    this.marquee = {
+      startX: event.clientX,
+      startYContent: event.clientY - rect.top + scrollEl.scrollTop,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      additive,
+      base: additive ? new Set(this.reorderSelectedHashes) : new Set(),
+      hits: new Set(),
+      active: false,
+      raf: null,
+    };
+
+    document.addEventListener('mousemove', this.onMarqueeMove);
+    document.addEventListener('mouseup', this.onMarqueeEnd);
+    window.addEventListener('blur', this.onMarqueeEnd);
+  }
+
+  private onMarqueeMove = (event: MouseEvent): void => {
+    const m = this.marquee;
+    if (!m) {
+      return;
+    }
+
+    m.lastX = event.clientX;
+    m.lastY = event.clientY;
+
+    if (!m.active) {
+      if (Math.abs(m.lastX - m.startX) < 5 && Math.abs(m.lastY - (m.startYContent + this.galleryOffsetTop())) < 5) {
+        return;
+      }
+      m.active = true;
+      const tick = () => {
+        if (this.marquee !== m) {
+          return;
+        }
+        if (this.autoScrollMarquee()) {
+          this.updateMarquee();
+        }
+        m.raf = requestAnimationFrame(tick);
+      };
+      m.raf = requestAnimationFrame(tick);
+    }
+
+    this.updateMarquee();
+  };
+
+  private onMarqueeEnd = (): void => {
+    const m = this.marquee;
+    document.removeEventListener('mousemove', this.onMarqueeMove);
+    document.removeEventListener('mouseup', this.onMarqueeEnd);
+    window.removeEventListener('blur', this.onMarqueeEnd);
+
+    if (!m) {
+      return;
+    }
+
+    if (m.raf != null) {
+      cancelAnimationFrame(m.raf);
+    }
+
+    if (m.active) {
+      this.updateMarquee();
+      // the mouseup may land on a video: do not let that click open / toggle it
+      const swallowClick = (clickEvent: MouseEvent) => {
+        clickEvent.stopPropagation();
+        clickEvent.preventDefault();
+      };
+      window.addEventListener('click', swallowClick, true);
+      setTimeout(() => window.removeEventListener('click', swallowClick, true), 0);
+    } else if (!m.additive) {
+      this.reorderSelectedHashes = new Set(); // plain click on an empty spot clears the selection
+    }
+
+    this.marquee = null;
+    this.marqueeRect = null;
+    this.cd.detectChanges();
+  };
+
+  /** How far the gallery content is scrolled, as an offset from screen coordinates */
+  private galleryOffsetTop(): number {
+    const scrollEl = document.getElementById('scrollDiv');
+    return scrollEl ? scrollEl.getBoundingClientRect().top - scrollEl.scrollTop : 0;
+  }
+
+  /**
+   * Redraw the rectangle and select the videos it touches
+   */
+  private updateMarquee(): void {
+    const m = this.marquee;
+    const scrollEl = document.getElementById('scrollDiv');
+    if (!m || !m.active || !scrollEl) {
+      return;
+    }
+
+    const box = scrollEl.getBoundingClientRect();
+    const startY = m.startYContent + box.top - scrollEl.scrollTop;
+
+    const left = Math.min(m.startX, m.lastX);
+    const right = Math.max(m.startX, m.lastX);
+    const top = Math.min(startY, m.lastY);
+    const bottom = Math.max(startY, m.lastY);
+
+    // draw only the part inside the gallery
+    const drawTop = Math.max(top, box.top);
+    const drawBottom = Math.min(bottom, box.bottom);
+    const drawLeft = Math.max(left, box.left);
+    const drawRight = Math.min(right, box.left + scrollEl.clientWidth);
+    this.marqueeRect = {
+      left: drawLeft,
+      top: drawTop,
+      width: Math.max(0, drawRight - drawLeft),
+      height: Math.max(0, drawBottom - drawTop),
+    };
+
+    // only rendered videos can be measured; ones scrolled out of view keep their last state
+    scrollEl.querySelectorAll('[data-vha-hash]').forEach((el: Element) => {
+      const hash = el.getAttribute('data-vha-hash');
+      const r = el.getBoundingClientRect();
+      const inside = r.right > left && r.left < right && r.bottom > top && r.top < bottom;
+      if (inside) {
+        m.hits.add(hash);
+      } else {
+        m.hits.delete(hash);
+      }
+    });
+
+    const next = new Set(m.base);
+    m.hits.forEach((hash) => next.add(hash));
+    this.reorderSelectedHashes = next;
+    this.cd.detectChanges();
+  }
+
+  /**
+   * Scroll the gallery while the pointer is held near its top or bottom edge
+   */
+  private autoScrollMarquee(): boolean {
+    const scrollEl = document.getElementById('scrollDiv');
+    if (!this.marquee || !scrollEl) {
+      return false;
+    }
+
+    const rect = scrollEl.getBoundingClientRect();
+    const edgePx = 60;
+    const maxSpeed = 22;
+    const y = this.marquee.lastY;
+    const before = scrollEl.scrollTop;
+
+    if (y < rect.top + edgePx) {
+      scrollEl.scrollTop -= Math.ceil(maxSpeed * Math.min(1, (rect.top + edgePx - y) / edgePx));
+    } else if (y > rect.bottom - edgePx) {
+      scrollEl.scrollTop += Math.ceil(maxSpeed * Math.min(1, (y - rect.bottom + edgePx) / edgePx));
+    }
+
+    return scrollEl.scrollTop !== before;
+  }
+
   /**
    * Auto-scroll the gallery when dragging near the top or bottom edge
    */
@@ -1431,10 +1636,30 @@ export class HomeComponent implements OnInit, AfterViewInit {
   }
 
   /**
+   * Right-click "Sort selected A-Z": re-order the selected videos by file name where they stand
+   */
+  sortSelectionAlphabetically(): void {
+    const selection = this.reorderSelectionForRightClick();
+    if (!this.isManualSortActive() || selection.length < 2) {
+      return;
+    }
+
+    const hashes = new Set(selection.map((el) => el.hash));
+    this.sendMtimeUpdates(computeSortSelectionMtimes(this.pipeSideEffectService.galleryShowing, hashes));
+  }
+
+  /**
    * Collect newly detected videos, then stamp them all at once as the newest videos
    * so that they show up on top (A-Z) when sorting by Date modified
    */
   private queueNewVideoStamp(element: ImageElement): void {
+    // a re-imported file replaces its older hub entry: keep only the newest one in the batch
+    this.newVideosToStamp = this.newVideosToStamp.filter((queued: ImageElement) => {
+      // tslint:disable-next-line:triple-equals
+      return !(queued.inputSource == element.inputSource
+        && queued.partialPath === element.partialPath
+        && queued.fileName === element.fileName);
+    });
     this.newVideosToStamp.push(element);
     this.lastNewVideoArrival = Date.now();
 
@@ -1455,7 +1680,8 @@ export class HomeComponent implements OnInit, AfterViewInit {
       return;
     }
 
-    const batch = this.newVideosToStamp;
+    const inHub = new Set(this.imageElementService.imageElements);
+    const batch = this.newVideosToStamp.filter((element: ImageElement) => inHub.has(element));
     this.newVideosToStamp = [];
 
     if (!this.settingsButtons['newVideosOnTop'].toggled) {
@@ -1499,7 +1725,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
   /**
    * Apply hub mtime updates for files that Node successfully touched
    */
-  private handleMtimeUpdateResponse(results: { fullPath: string, success: boolean }[]): void {
+  private handleMtimeUpdateResponse(results: { fullPath: string, success: boolean, mtimeMs?: number }[]): void {
     const batch = this.pendingMtimeUpdates.shift();
 
     if (!batch || !batch.updates.length) {
@@ -1508,8 +1734,8 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
     const pending = batch.updates;
 
-    const successByPath = new Map(
-      (results || []).map((result) => [result.fullPath, result.success])
+    const resultByPath = new Map(
+      (results || []).map((result) => [result.fullPath, result])
     );
 
     const applied: MtimeUpdate[] = [];
@@ -1517,8 +1743,10 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
     pending.forEach((update) => {
       const fullPath = this.filePathService.getPathFromImageElement(update.element);
-      if (successByPath.get(fullPath)) {
-        applied.push(update);
+      const result = resultByPath.get(fullPath);
+      if (result && result.success) {
+        // keep the hub in step with the time the drive actually stored (it may round it)
+        applied.push(typeof result.mtimeMs === 'number' ? { ...update, mtimeMs: result.mtimeMs } : update);
       } else {
         anyFailed = true;
       }
@@ -2825,7 +3053,9 @@ export class HomeComponent implements OnInit, AfterViewInit {
     const clientY: number = event.clientY;
     const howFarFromBottom: number = winHeight - clientY;
 
-    const menuHeight = this.isManualSortActive() ? 305 : 275;
+    const menuHeight = !this.isManualSortActive()
+      ? 275
+      : this.reorderSelectionForRightClick().length > 1 ? 335 : 305; // + "Sort selected A-Z"
     this.rightClickPosition.x = (howFarFromRight < 150) ? clientX - 150 + (howFarFromRight) : clientX;
     this.rightClickPosition.y = (howFarFromBottom < menuHeight) ? clientY - menuHeight + (howFarFromBottom) : clientY;
 

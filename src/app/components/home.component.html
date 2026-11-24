@@ -105,6 +105,15 @@
           @if (reorderSelectionForRightClick().length > 1) {
             ({{ reorderSelectionForRightClick().length }})
           }</li>
+        @if (reorderSelectionForRightClick().length > 1) {
+          <li
+            (click)="sortSelectionAlphabetically()"
+            [ngClass]="{ 'right-click-disabled': !sourceFolderService.sourceFolderConnected[currentRightClickedItem.inputSource] }"
+            title="{{ 'RIGHTCLICK.sortSelectedAZHint' | translate }}"
+          >
+                                                                {{ 'RIGHTCLICK.sortSelectedAZ' | translate }}
+            ({{ reorderSelectionForRightClick().length }})</li>
+        }
       }
 
       <li
@@ -805,6 +814,7 @@
           <li><span class="keys"><kbd>Shift</kbd>+<kbd>Click</kbd></span>{{ 'SIDEBAR.shortcutOpenFolder' | translate }}</li>
           <li><span class="keys"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Click</kbd></span>{{ 'SIDEBAR.shortcutSetThumbnail' | translate }}</li>
           <li><span class="keys"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Click</kbd></span>{{ 'SIDEBAR.shortcutMultiSelect' | translate }}</li>
+          <li><span class="keys"><kbd>Drag</kbd></span>{{ 'SIDEBAR.shortcutDragSelect' | translate }}</li>
           @if (settingsButtons['spacePlaysRandom'].toggled) {
             <li><span class="keys"><kbd>Ctrl</kbd>+<kbd>Space</kbd></span>{{ 'SIDEBAR.shortcutRandomVideo' | translate }}</li>
           }
@@ -828,6 +838,7 @@
       #scroll
       id="scrollDiv"
       class="gallery-container"
+      (mousedown)="onGalleryMouseDown($event)"
 
       [ngStyle]="{
           'height': 'calc(100vh - ' + (
@@ -979,6 +990,7 @@
           (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
 
           [video]="item"
+          [attr.data-vha-hash]="item.hash"
 
           [connected]="sourceFolderService.sourceFolderConnected[item.inputSource]"
 
@@ -1030,6 +1042,7 @@
           (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
 
           [video]="item"
+          [attr.data-vha-hash]="item.hash"
 
           [elHeight]="previewHeight + textPaddingHeight"
           [folderPath]="appState.selectedOutputFolder"
@@ -1075,6 +1088,7 @@
           (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
 
           [video]="item"
+          [attr.data-vha-hash]="item.hash"
 
           [elHeight]="previewHeight + textPaddingHeight"
           [folderPath]="appState.selectedOutputFolder"
@@ -1113,6 +1127,7 @@
           [draggable]="isManualSortActive() || settingsButtons['dragVideoOutOfApp'].toggled"
           (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
           [video]="item"
+          [attr.data-vha-hash]="item.hash"
           [showFavorites]="settingsButtons['favorites'].toggled"
 
           [darkMode]="settingsButtons['darkMode'].toggled"
@@ -1149,6 +1164,7 @@
           (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
 
           [video]="item"
+          [attr.data-vha-hash]="item.hash"
 
           [settingsButtons]="settingsButtons"
 
@@ -1204,6 +1220,7 @@
           (dragstart)="isManualSortActive() ? onReorderDragStart($event, item) : draggingVideoFile($event, item)"
 
           [video]="item"
+          [attr.data-vha-hash]="item.hash"
 
           [elHeight]="previewHeight + textPaddingHeight"
           [elWidth]="previewWidth"
@@ -1233,6 +1250,18 @@
       <div class="bottom-of-scroller-spacer"></div>
 
     </virtual-scroller>
+
+  @if (marqueeRect) {
+    <div
+      class="marquee-select"
+      [ngStyle]="{
+          left:   marqueeRect.left   + 'px',
+          top:    marqueeRect.top    + 'px',
+          width:  marqueeRect.width  + 'px',
+          height: marqueeRect.height + 'px'
+        }"
+    ></div>
+  }
 
   @if (numberOfVideosFound === 0) {
     <div

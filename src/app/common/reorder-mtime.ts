@@ -5,11 +5,12 @@ export interface MtimeUpdate {
   mtimeMs: number;
 }
 
-const SECOND_MS = 1000;
+// Two seconds: FAT / exFAT drives store Date modified in 2-second steps, so 1-second steps would tie on disk
+const STEP_MS = 2000;
 
 /**
  * After moving an item from `fromIndex` to `toIndex` in a modifiedDesc (newest-first) list,
- * compute the minimal set of second-precision mtime updates needed to preserve that order.
+ * compute the minimal set of 2-second-step mtime updates needed to preserve that order.
  */
 export function computeReorderMtimes(
   galleryShowing: ImageElement[],
@@ -30,7 +31,7 @@ export function computeReorderMtimes(
   const [moved] = ordered.splice(fromIndex, 1);
   ordered.splice(toIndex, 0, moved);
 
-  const nowSec = Math.floor(Date.now() / SECOND_MS) * SECOND_MS;
+  const nowSec = Math.floor(Date.now() / STEP_MS) * STEP_MS;
   const single = trySingleItemMtime(ordered, toIndex, nowSec);
 
   if (single !== null) {
@@ -44,7 +45,7 @@ export function computeReorderMtimes(
 }
 
 /**
- * Pick a second-precision mtime that makes `item` strictly the newest among all videos.
+ * Pick a 2-second-step mtime that makes `item` strictly the newest among all videos.
  * Returns null if it is already uniquely most recent.
  */
 export function computeMoveToTopMtime(
@@ -71,8 +72,8 @@ export function computeMoveToTopMtime(
     return null;
   }
 
-  const nowSec = Math.floor(Date.now() / SECOND_MS) * SECOND_MS;
-  return Math.max(nowSec, Math.floor(othersMax / SECOND_MS) * SECOND_MS + SECOND_MS);
+  const nowSec = Math.floor(Date.now() / STEP_MS) * STEP_MS;
+  return Math.max(nowSec, Math.floor(othersMax / STEP_MS) * STEP_MS + STEP_MS);
 }
 
 /**
@@ -97,21 +98,48 @@ export function computeGroupReorderMtimes(
     return [];
   }
 
-  const start = insertAfter ? targetIndex + 1 : targetIndex;
+  return placeBlockMtimes(ordered, block, insertAfter ? targetIndex + 1 : targetIndex);
+}
+
+/**
+ * Re-order the selected videos A-Z (by file name) where they stand: the block takes the place
+ * of the topmost selected video in a modifiedDesc list, and the rest of the list keeps its order.
+ */
+export function computeSortSelectionMtimes(
+  galleryShowing: ImageElement[],
+  selectedHashes: Set<string>
+): MtimeUpdate[] {
+  const firstSelected = galleryShowing.findIndex((el) => selectedHashes.has(el.hash));
+  if (firstSelected < 0) {
+    return [];
+  }
+
+  const block = galleryShowing.filter((el) => selectedHashes.has(el.hash)).sort(compareFileNames);
+  const ordered = galleryShowing.filter((el) => !selectedHashes.has(el.hash));
+
+  // everything above the topmost selected video stays above the block
+  return placeBlockMtimes(ordered, block, firstSelected);
+}
+
+/**
+ * Insert `block` into `ordered` (a modifiedDesc list without the block) at `start`
+ * and compute the mtime updates that make the list read in that order.
+ */
+function placeBlockMtimes(ordered: ImageElement[], block: ImageElement[], start: number): MtimeUpdate[] {
   ordered.splice(start, 0, ...block);
 
   const end = start + block.length - 1;
-  const nowSec = Math.floor(Date.now() / SECOND_MS) * SECOND_MS;
+  const nowSec = Math.floor(Date.now() / STEP_MS) * STEP_MS;
   const newer = ordered[start - 1];
   const older = ordered[end + 1];
 
   let top: number | null = null;
   if (start === 0) {
-    if (!older || nowSec - (block.length - 1) * SECOND_MS > older.mtime) {
+    if (!older || nowSec - (block.length - 1) * STEP_MS > older.mtime) {
       top = nowSec;
     }
-  } else if (!older || newer.mtime - older.mtime >= (block.length + 1) * SECOND_MS) {
-    top = newer.mtime - SECOND_MS;
+  } else if (!older || newer.mtime - older.mtime >= (block.length + 1) * STEP_MS) {
+    top = newer.mtime - STEP_MS;
   }
 
   if (top === null) {
@@ -122,7 +150,7 @@ export function computeGroupReorderMtimes(
 }
 
 /**
- * Pick second-precision mtimes that make `items` the newest videos, preserving their
+ * Pick 2-second-step mtimes that make `items` the newest videos, preserving their
  * current relative order (newest first).
  */
 export function computeGroupMoveToTopMtimes(
@@ -142,6 +170,10 @@ export function computeGroupMoveToTopMtimes(
  */
 const fileNameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
+function compareFileNames(a: ImageElement, b: ImageElement): number {
+  return fileNameCollator.compare(a.fileName, b.fileName) || a.partialPath.localeCompare(b.partialPath);
+}
+
 /**
  * Stamp newly detected videos as the newest in the hub, as if they were just added to the drive
  * one after another: sorting by Date modified (newest first) lists them on top in A-Z order.
@@ -152,7 +184,7 @@ export function computeNewVideosMtimes(
 ): MtimeUpdate[] {
   const block = newVideos
     .filter((video) => !video.deleted && video.cleanName !== '*FOLDER*')
-    .sort((a, b) => fileNameCollator.compare(a.fileName, b.fileName) || a.partialPath.localeCompare(b.partialPath));
+    .sort(compareFileNames);
 
   if (!block.length) {
     return [];
@@ -185,22 +217,22 @@ function computeGroupMoveToTopMtimesInOrder(
     }
   }
 
-  const nowSec = Math.floor(Date.now() / SECOND_MS) * SECOND_MS;
+  const nowSec = Math.floor(Date.now() / STEP_MS) * STEP_MS;
   const top = Number.isFinite(othersMax)
-    ? Math.max(nowSec, Math.floor(othersMax / SECOND_MS) * SECOND_MS + block.length * SECOND_MS)
+    ? Math.max(nowSec, Math.floor(othersMax / STEP_MS) * STEP_MS + block.length * STEP_MS)
     : nowSec;
 
   return stampBlock(block, top);
 }
 
 /**
- * Give consecutive items descending whole-second mtimes starting at `top`.
+ * Give consecutive items descending 2-second mtimes starting at `top`.
  */
 function stampBlock(block: ImageElement[], top: number): MtimeUpdate[] {
   const updates: MtimeUpdate[] = [];
 
   block.forEach((element, i) => {
-    const mtimeMs = top - i * SECOND_MS;
+    const mtimeMs = top - i * STEP_MS;
     if (element.mtime !== mtimeMs) {
       updates.push({ element, mtimeMs });
     }
@@ -210,7 +242,7 @@ function stampBlock(block: ImageElement[], top: number): MtimeUpdate[] {
 }
 
 /**
- * Prefer updating only the moved item when a whole-second gap exists between neighbors.
+ * Prefer updating only the moved item when a 2-second gap exists between neighbors.
  */
 function trySingleItemMtime(
   ordered: ImageElement[],
@@ -228,18 +260,18 @@ function trySingleItemMtime(
   }
 
   if (!older) {
-    return newer.mtime - SECOND_MS;
+    return newer.mtime - STEP_MS;
   }
 
-  if (newer.mtime - older.mtime >= 2 * SECOND_MS) {
-    return newer.mtime - SECOND_MS;
+  if (newer.mtime - older.mtime >= 2 * STEP_MS) {
+    return newer.mtime - STEP_MS;
   }
 
   return null;
 }
 
 /**
- * Restamp from `toIndex` downward with consecutive seconds until the remaining list is valid.
+ * Restamp from `toIndex` downward with consecutive 2-second steps until the remaining list is valid.
  * Items up to `forceThrough` are always restamped (a moved block is not internally ordered).
  */
 function cascadeMtimes(
@@ -251,7 +283,7 @@ function cascadeMtimes(
   const updates: MtimeUpdate[] = [];
   let nextMtime = toIndex === 0
     ? nowSec
-    : ordered[toIndex - 1].mtime - SECOND_MS;
+    : ordered[toIndex - 1].mtime - STEP_MS;
 
   for (let i = toIndex; i < ordered.length; i++) {
     if (ordered[i].mtime !== nextMtime) {
@@ -263,7 +295,7 @@ function cascadeMtimes(
       break;
     }
 
-    nextMtime -= SECOND_MS;
+    nextMtime -= STEP_MS;
   }
 
   return updates;
